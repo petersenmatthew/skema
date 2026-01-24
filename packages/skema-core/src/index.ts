@@ -13,6 +13,8 @@
 
 // Main component
 export { Skema, default } from './components';
+export { AnnotationPopup } from './components';
+export type { AnnotationPopupProps, AnnotationPopupHandle } from './components';
 
 // Tools
 
@@ -49,6 +51,7 @@ export type {
   DOMSelection,
   DrawingAnnotation,
   GestureAnnotation,
+  PendingAnnotation,
   SkemaMode,
   SkemaProps,
   ViewportInfo,

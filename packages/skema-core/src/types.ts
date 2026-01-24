@@ -16,6 +16,38 @@ export interface DOMSelection {
   pathname: string;
   cssClasses?: string;
   attributes?: Record<string, string>;
+  /** User annotation comment */
+  comment?: string;
+  /** Whether this is a multi-element selection */
+  isMultiSelect?: boolean;
+}
+
+/**
+ * Pending annotation state for the popup
+ */
+export interface PendingAnnotation {
+  /** Screen X position (percentage of viewport width) */
+  x: number;
+  /** Screen Y position (pixels from top of document) */
+  y: number;
+  /** Y position relative to viewport (for popup positioning) */
+  clientY: number;
+  /** Element identifier string */
+  element: string;
+  /** CSS selector path */
+  elementPath: string;
+  /** Selected text content if any */
+  selectedText?: string;
+  /** Bounding box of selected element(s) */
+  boundingBox?: BoundingBox;
+  /** Whether this is a multi-element selection */
+  isMultiSelect?: boolean;
+  /** The DOM selection(s) being annotated */
+  selections?: DOMSelection[];
+  /** Type of annotation */
+  annotationType: 'dom_selection' | 'drawing';
+  /** Drawing shape IDs if annotating drawings */
+  shapeIds?: string[];
 }
 
 /**

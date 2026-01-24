@@ -24,9 +24,10 @@ import {
 import 'tldraw/tldraw.css';
 
 import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
-import type { Annotation, DOMSelection, SkemaProps, BoundingBox } from '../types';
+import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotation } from '../types';
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
 import { createDOMSelection, shouldIgnoreElement } from '../utils/element-identification';
+import { AnnotationPopup, AnnotationPopupHandle } from './AnnotationPopup';
 
 // Custom toolbar with DOM picker and lasso select
 const SkemaToolbar: React.FC = (props) => {
@@ -279,9 +280,16 @@ const AnnotationsSidebar: React.FC<{
                 {annotation.type === 'gesture' && `👆 ${annotation.gesture}`}
               </div>
               {annotation.type === 'dom_selection' && (
-                <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                  {(annotation as DOMSelection).selector.slice(0, 50)}
-                </div>
+                <>
+                  {(annotation as DOMSelection).comment && (
+                    <div style={{ color: '#374151', fontSize: '12px', marginBottom: '4px' }}>
+                      {(annotation as DOMSelection).comment}
+                    </div>
+                  )}
+                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
+                    {(annotation as DOMSelection).selector.slice(0, 50)}
+                  </div>
+                </>
               )}
             </div>
           ))
@@ -304,7 +312,10 @@ export const Skema: React.FC<SkemaProps> = ({
   const [isActive, setIsActive] = useState(enabled);
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [domSelections, setDomSelections] = useState<DOMSelection[]>([]);
+  const [pendingAnnotation, setPendingAnnotation] = useState<PendingAnnotation | null>(null);
+  const [pendingExiting, setPendingExiting] = useState(false);
   const editorRef = useRef<Editor | null>(null);
+  const popupRef = useRef<AnnotationPopupHandle>(null);
   const lastDoubleClickRef = useRef<number>(0);
 
   // Handle keyboard shortcut to toggle
@@ -382,13 +393,145 @@ export const Skema: React.FC<SkemaProps> = ({
     onAnnotationsChange?.(annotations);
   }, [annotations, onAnnotationsChange]);
 
-  // Handle DOM selection from picker
+  // Helper to check if there are drawings in the current tldraw selection
+  const getSelectedDrawings = useCallback(() => {
+    if (!editorRef.current) return [];
+    const editor = editorRef.current;
+    const selectedIds = editor.getSelectedShapeIds();
+    const shapes = selectedIds.map(id => editor.getShape(id)).filter(Boolean);
+    return shapes.filter(shape => 
+      shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
+    );
+  }, []);
+
+  // Handle DOM selection from picker - shows annotation popup
   const handleDOMSelect = useCallback((selection: DOMSelection) => {
-    setDomSelections((prev) => [...prev, selection]);
-    setAnnotations((prev) => [
-      ...prev,
-      { type: 'dom_selection', ...selection } as Annotation,
-    ]);
+    // Check if there are also drawings selected
+    const selectedDrawings = getSelectedDrawings();
+    const hasDrawings = selectedDrawings.length > 0;
+    
+    // Calculate popup position
+    const rect = selection.boundingBox;
+    const x = ((rect.x + rect.width / 2) / window.innerWidth) * 100;
+    const clientY = rect.y - window.scrollY + rect.height / 2;
+    
+    // Build element description
+    let elementDesc = selection.tagName;
+    if (hasDrawings) {
+      elementDesc = `Drawing + ${selection.tagName}`;
+    }
+    
+    // Set pending annotation to show popup
+    setPendingAnnotation({
+      x,
+      y: rect.y + rect.height / 2,
+      clientY,
+      element: elementDesc,
+      elementPath: selection.elementPath,
+      selectedText: selection.text?.slice(0, 100),
+      boundingBox: rect,
+      isMultiSelect: hasDrawings,
+      selections: [selection],
+      annotationType: 'dom_selection',
+      shapeIds: hasDrawings ? editorRef.current?.getSelectedShapeIds() as string[] : undefined,
+    });
+  }, [getSelectedDrawings]);
+
+  // Handle multi-element selection (from lasso/brush) - shows popup for all selected
+  const handleMultiDOMSelect = useCallback((selections: DOMSelection[]) => {
+    if (selections.length === 0) return;
+    
+    // Check if there are also drawings selected
+    const selectedDrawings = getSelectedDrawings();
+    const hasDrawings = selectedDrawings.length > 0;
+    
+    // Calculate combined bounding box
+    const minX = Math.min(...selections.map(s => s.boundingBox.x));
+    const minY = Math.min(...selections.map(s => s.boundingBox.y));
+    const maxX = Math.max(...selections.map(s => s.boundingBox.x + s.boundingBox.width));
+    const maxY = Math.max(...selections.map(s => s.boundingBox.y + s.boundingBox.height));
+    
+    const combinedBounds: BoundingBox = {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
+    
+    const centerX = minX + (maxX - minX) / 2;
+    const centerY = minY + (maxY - minY) / 2;
+    const x = (centerX / window.innerWidth) * 100;
+    const clientY = centerY - window.scrollY;
+    
+    // Build element description
+    const elementNames = selections.slice(0, 3).map(s => s.tagName).join(', ');
+    const suffix = selections.length > 3 ? ` +${selections.length - 3} more` : '';
+    let element = `${selections.length} elements: ${elementNames}${suffix}`;
+    
+    // Add drawing info if present
+    if (hasDrawings) {
+      const drawingCount = selectedDrawings.length;
+      element = `Drawing (${drawingCount}) + ${element}`;
+    }
+    
+    setPendingAnnotation({
+      x,
+      y: centerY,
+      clientY,
+      element,
+      elementPath: 'multi-select',
+      boundingBox: combinedBounds,
+      isMultiSelect: true,
+      selections,
+      annotationType: 'dom_selection',
+      shapeIds: hasDrawings ? editorRef.current?.getSelectedShapeIds() as string[] : undefined,
+    });
+  }, [getSelectedDrawings]);
+
+  // Submit annotation from popup
+  const handleAnnotationSubmit = useCallback((comment: string) => {
+    if (!pendingAnnotation) return;
+    
+    if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
+      // Add all DOM selections with the comment
+      const newSelections = pendingAnnotation.selections.map(selection => ({
+        ...selection,
+        comment,
+      }));
+      
+      setDomSelections((prev) => [...prev, ...newSelections]);
+      setAnnotations((prev) => [
+        ...prev,
+        ...newSelections.map(sel => ({ type: 'dom_selection' as const, ...sel })),
+      ]);
+    } else if (pendingAnnotation.annotationType === 'drawing' && pendingAnnotation.shapeIds) {
+      // Handle drawing annotation
+      const drawingAnnotation: Annotation = {
+        id: `drawing-${Date.now()}`,
+        type: 'drawing',
+        tool: 'draw',
+        shapes: pendingAnnotation.shapeIds,
+        boundingBox: pendingAnnotation.boundingBox!,
+        timestamp: Date.now(),
+      };
+      setAnnotations((prev) => [...prev, drawingAnnotation]);
+    }
+    
+    // Animate out and clear
+    setPendingExiting(true);
+    setTimeout(() => {
+      setPendingAnnotation(null);
+      setPendingExiting(false);
+    }, 150);
+  }, [pendingAnnotation]);
+
+  // Cancel annotation popup
+  const handleAnnotationCancel = useCallback(() => {
+    setPendingExiting(true);
+    setTimeout(() => {
+      setPendingAnnotation(null);
+      setPendingExiting(false);
+    }, 150);
   }, []);
 
   // Clear all annotations
@@ -456,9 +599,11 @@ export const Skema: React.FC<SkemaProps> = ({
     return elements;
   }, []);
 
-  // Handle selection changes from tldraw
-  const handleSelectionChange = useCallback((selectedIds: TLShapeId[]) => {
+  // Handle drawing annotation (triggered when drawings are selected)
+  const handleDrawingAnnotation = useCallback((selectedIds: TLShapeId[]) => {
     if (!editorRef.current || selectedIds.length === 0) return;
+    // Don't trigger if there's already a pending annotation
+    if (pendingAnnotation) return;
 
     const editor = editorRef.current;
     const selectedShapes = selectedIds.map((id) => editor.getShape(id)).filter(Boolean);
@@ -469,74 +614,57 @@ export const Skema: React.FC<SkemaProps> = ({
     const selectionBounds = editor.getSelectionPageBounds();
     if (!selectionBounds) return;
 
-    // Tldraw shapes are now in document coordinates (camera synced with scroll)
-    // Convert to viewport coordinates for DOM element matching
+    // Check if these are drawing shapes
+    const drawingShapes = selectedShapes.filter(shape => 
+      shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
+    );
+
+    if (drawingShapes.length === 0) return;
+
+    // Check for DOM elements in the selection bounds
     const viewportBounds: BoundingBox = {
       x: selectionBounds.x - window.scrollX,
       y: selectionBounds.y - window.scrollY,
       width: selectionBounds.width,
       height: selectionBounds.height,
     };
+    const domElements = findDOMElementsInBounds(viewportBounds);
 
-    // Find DOM elements in bounds
-    const foundElements = findDOMElementsInBounds(viewportBounds);
+    // Show annotation popup for drawings (and any DOM elements in bounds)
+    const centerX = selectionBounds.x + selectionBounds.width / 2;
+    const centerY = selectionBounds.y + selectionBounds.height / 2;
+    const x = ((centerX - window.scrollX) / window.innerWidth) * 100;
+    const clientY = centerY - window.scrollY;
 
-    // Check if Shift is held
-    const isShiftKey = editor.inputs.shiftKey;
-
-    if (!isShiftKey) {
-      // If Shift is NOT held, we want to Replace the selection.
-      // But we need to keep the logic that prevents duplicates within the NEW set.
-
-      const newSelections: DOMSelection[] = [];
-
-      foundElements.forEach((el) => {
-        const selector = el.tagName.toLowerCase() +
-          (el.id ? `#${el.id}` : '') +
-          (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
-
-        // Check if already in our NEW list
-        const alreadyInNewList = newSelections.some(
-          (s) => s.selector === selector ||
-            (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
-              Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
-        );
-
-        if (!alreadyInNewList) {
-          newSelections.push(createDOMSelection(el));
-        }
-      });
-
-      setDomSelections(newSelections);
-
-      // Update annotations: remove old domain selections, add new ones
-      setAnnotations(prev => {
-        const nonDomAnnotations = prev.filter(a => a.type !== 'dom_selection');
-        const newDomAnnotations = newSelections.map(s => ({ type: 'dom_selection', ...s } as Annotation));
-        return [...nonDomAnnotations, ...newDomAnnotations];
-      });
-
-    } else {
-      // If Shift IS held, we Append (existing logic)
-      foundElements.forEach((el) => {
-        const selector = el.tagName.toLowerCase() +
-          (el.id ? `#${el.id}` : '') +
-          (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
-
-        // Check if already selected (in current state)
-        const alreadySelected = domSelections.some(
-          (s) => s.selector === selector ||
-            (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
-              Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
-        );
-
-        if (!alreadySelected) {
-          const selection = createDOMSelection(el);
-          handleDOMSelect(selection);
-        }
-      });
+    // Build element description
+    let elementDesc = `Drawing (${drawingShapes.length} shape${drawingShapes.length > 1 ? 's' : ''})`;
+    if (domElements.length > 0) {
+      const domNames = domElements.slice(0, 2).map(el => el.tagName.toLowerCase()).join(', ');
+      const domSuffix = domElements.length > 2 ? ` +${domElements.length - 2} more` : '';
+      elementDesc += ` + ${domNames}${domSuffix}`;
     }
-  }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
+
+    // Create DOM selections if there are DOM elements
+    const newDomSelections = domElements.map(el => createDOMSelection(el));
+
+    setPendingAnnotation({
+      x,
+      y: centerY,
+      clientY,
+      element: elementDesc,
+      elementPath: 'drawing',
+      boundingBox: {
+        x: selectionBounds.x,
+        y: selectionBounds.y,
+        width: selectionBounds.width,
+        height: selectionBounds.height,
+      },
+      isMultiSelect: drawingShapes.length > 1 || domElements.length > 0,
+      annotationType: 'drawing',
+      shapeIds: selectedIds as string[],
+      selections: newDomSelections.length > 0 ? newDomSelections : undefined,
+    });
+  }, [pendingAnnotation, findDOMElementsInBounds]);
 
   // Handle brush/drag selection to select DOM elements
   const handleBrushSelection = useCallback((brushBounds: BoundingBox) => {
@@ -551,46 +679,26 @@ export const Skema: React.FC<SkemaProps> = ({
     // Find DOM elements in bounds
     const foundElements = findDOMElementsInBounds(viewportBounds);
 
-    // Check if Shift is held
-    const isShiftKey = editorRef.current?.inputs.shiftKey;
+    // Filter out already selected elements
+    const newElements = foundElements.filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return !domSelections.some(
+        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+      );
+    });
 
-    if (!isShiftKey) {
-      // Replace logic
-      const newSelections: DOMSelection[] = [];
+    if (newElements.length === 0) return;
 
-      foundElements.forEach((el) => {
-        // Dedupe logic for new list
-        const alreadyInNewList = newSelections.some(s =>
-          Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
-          Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5
-        );
-        if (!alreadyInNewList) {
-          newSelections.push(createDOMSelection(el));
-        }
-      });
-
-      setDomSelections(newSelections);
-      setAnnotations(prev => [
-        ...prev.filter(a => a.type !== 'dom_selection'),
-        ...newSelections.map(s => ({ type: 'dom_selection', ...s } as Annotation))
-      ]);
+    // Create selections and show popup
+    const selections = newElements.map(el => createDOMSelection(el));
+    
+    if (selections.length === 1) {
+      handleDOMSelect(selections[0]);
     } else {
-      // Append logic
-      foundElements.forEach((el) => {
-        const rect = el.getBoundingClientRect();
-        // Check if already selected by comparing position
-        const alreadySelected = domSelections.some(
-          (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-            Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
-        );
-
-        if (!alreadySelected) {
-          const selection = createDOMSelection(el);
-          handleDOMSelect(selection);
-        }
-      });
+      handleMultiDOMSelect(selections);
     }
-  }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
+  }, [findDOMElementsInBounds, domSelections, handleDOMSelect, handleMultiDOMSelect]);
 
   // Check if a point is inside a polygon (ray casting algorithm)
   const isPointInPolygon = useCallback((point: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean => {
@@ -668,58 +776,41 @@ export const Skema: React.FC<SkemaProps> = ({
       }
     });
 
-    // Check if Shift is held
-    const isShiftKey = editorRef.current?.inputs.shiftKey;
+    // Filter out already selected elements
+    const newElements = foundElements.filter((el) => {
+      const rect = el.getBoundingClientRect();
+      return !domSelections.some(
+        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+               Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+      );
+    });
 
-    if (!isShiftKey) {
-      // Replace logic
-      const newSelections: DOMSelection[] = [];
+    if (newElements.length === 0) return;
 
-      foundElements.forEach((el) => {
-        const rect = el.getBoundingClientRect();
-        // Dedupe logic for new list
-        const alreadyInNewList = newSelections.some(s =>
-          Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
-        );
-        if (!alreadyInNewList) {
-          newSelections.push(createDOMSelection(el));
-        }
-      });
-
-      setDomSelections(newSelections);
-      setAnnotations(prev => [
-        ...prev.filter(a => a.type !== 'dom_selection'),
-        ...newSelections.map(s => ({ type: 'dom_selection', ...s } as Annotation))
-      ]);
+    // Create selections and show popup
+    const selections = newElements.map(el => createDOMSelection(el));
+    
+    if (selections.length === 1) {
+      handleDOMSelect(selections[0]);
     } else {
-      // Create selections for found elements (avoid duplicates)
-      foundElements.forEach((el) => {
-        const rect = el.getBoundingClientRect();
-        // Check if already selected by comparing position
-        const alreadySelected = domSelections.some(
-          (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-            Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
-        );
-
-        if (!alreadySelected) {
-          const selection = createDOMSelection(el);
-          handleDOMSelect(selection);
-        }
-      });
+      handleMultiDOMSelect(selections);
     }
-  }, [isPointInPolygon, domSelections, handleDOMSelect]);
+  }, [isPointInPolygon, domSelections, handleDOMSelect, handleMultiDOMSelect]);
 
   // Editor mount handler
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
-    // Override double click behavior to disable text creation
+    // Override double click behavior to disable text creation and select DOM elements
     // See: https://tldraw.dev/examples/custom-double-click-behavior
     try {
-      type IdleStateNode = StateNode & { handleDoubleClickOnCanvas(info: TLClickEventInfo): void };
+      type IdleStateNode = StateNode & { 
+        handleDoubleClickOnCanvas(info: TLClickEventInfo): void;
+        handleDoubleClickOnShape?(info: TLClickEventInfo, shape: any): void;
+      };
       const selectIdleState = editor.getStateDescendant<IdleStateNode>('select.idle');
       if (selectIdleState) {
+        // Handle double-click on canvas (for DOM elements)
         selectIdleState.handleDoubleClickOnCanvas = (info) => {
           // Record double click time to prevent immediate clearing by pointerdown handler
           lastDoubleClickRef.current = Date.now();
@@ -735,17 +826,33 @@ export const Skema: React.FC<SkemaProps> = ({
 
           if (target) {
             // If shift is not held, replace the selection (clear others first)
-            // If shift IS held, we just append (which handleDOMSelect does)
             if (!info.shiftKey) {
               setDomSelections([]);
               setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
             }
 
+            // Create selection and show popup
             const selection = createDOMSelection(target);
-            handleDOMSelect(selection);
+            const rect = selection.boundingBox;
+            const x = ((rect.x + rect.width / 2) / window.innerWidth) * 100;
+            const clientY = rect.y - window.scrollY + rect.height / 2;
+            
+            setPendingAnnotation({
+              x,
+              y: rect.y + rect.height / 2,
+              clientY,
+              element: selection.tagName,
+              elementPath: selection.elementPath,
+              selectedText: selection.text?.slice(0, 100),
+              boundingBox: rect,
+              isMultiSelect: false,
+              selections: [selection],
+              annotationType: 'dom_selection',
+            });
           }
         };
-      }
+
+          }
     } catch (e) {
       console.warn('Failed to override double click behavior', e);
     }
@@ -805,22 +912,46 @@ export const Skema: React.FC<SkemaProps> = ({
       return;
     });
 
-    // Listen for selection changes using sideEffects
+    // Track when drawing is complete to show annotation popup
+    let drawingCompleteTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    // Listen for selection changes to detect when drawing is complete
     editor.sideEffects.registerAfterChangeHandler('instance_page_state', (prev, next) => {
       if (prev.selectedShapeIds !== next.selectedShapeIds) {
         const selectedIds = next.selectedShapeIds;
+        
+        // Clear any pending timeout
+        if (drawingCompleteTimeout) {
+          clearTimeout(drawingCompleteTimeout);
+          drawingCompleteTimeout = null;
+        }
+        
         if (selectedIds.length > 0) {
-          // Debounce to avoid too many calls
-          setTimeout(() => {
-            handleSelectionChange([...selectedIds] as TLShapeId[]);
-          }, 100);
+          // Debounce to ensure selection is stable (drawing is complete)
+          drawingCompleteTimeout = setTimeout(() => {
+            // Only trigger if we're in select mode (not actively drawing)
+            const currentTool = editor.getCurrentToolId();
+            if (currentTool !== 'select') {
+              return;
+            }
+            
+            // Check if selected shapes are drawings
+            const shapes = selectedIds.map(id => editor.getShape(id)).filter(Boolean);
+            const hasDrawings = shapes.some(shape => 
+              shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
+            );
+            
+            if (hasDrawings) {
+              handleDrawingAnnotation([...selectedIds] as TLShapeId[]);
+            }
+          }, 400); // Wait 400ms to ensure drawing is complete
         }
       }
       return;
     });
-  }, [handleDOMSelect, handleSelectionChange, handleBrushSelection, handleLassoSelection]);
+  }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
 
-  // Handle single click to clear DOM selections
+  // Handle single click to clear DOM selections or shake popup
   useEffect(() => {
     if (!isActive) return;
 
@@ -828,11 +959,23 @@ export const Skema: React.FC<SkemaProps> = ({
       // Only handle left clicks
       if (e.button !== 0) return;
 
+      const target = e.target as HTMLElement;
+      
+      // If clicking on the popup, don't do anything
+      if (target.closest('[data-skema="annotation-popup"]')) return;
+
+      // If there's a pending annotation and clicking elsewhere, cancel it
+      if (pendingAnnotation) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleAnnotationCancel();
+        return;
+      }
+
       // If shift key is pressed, don't clear selections (preserve multi-select intent)
       if (e.shiftKey) return;
 
       // Check if clicking on tldraw canvas (not on UI elements)
-      const target = e.target as HTMLElement;
       if (!target.closest('.tl-canvas')) return;
 
       // Clear DOM selections when clicking on empty canvas
@@ -853,9 +996,9 @@ export const Skema: React.FC<SkemaProps> = ({
       }, 150);
     };
 
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [isActive]);
+    document.addEventListener('pointerdown', handlePointerDown, { capture: true });
+    return () => document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
+  }, [isActive, pendingAnnotation, handleAnnotationCancel]);
 
   // Custom components
   const components: TLComponents = {
@@ -929,6 +1072,67 @@ export const Skema: React.FC<SkemaProps> = ({
 
       {/* DOM selection highlights */}
       <SelectionOverlay selections={domSelections} />
+
+      {/* Pending annotation highlight and popup */}
+      {pendingAnnotation && pendingAnnotation.boundingBox && (
+        <>
+          {/* Highlight outline for pending selection */}
+          <div
+            data-skema="pending-highlight"
+            style={{
+              position: 'fixed',
+              left: pendingAnnotation.boundingBox.x - scrollOffset.x,
+              top: pendingAnnotation.boundingBox.y - scrollOffset.y,
+              width: pendingAnnotation.boundingBox.width,
+              height: pendingAnnotation.boundingBox.height,
+              border: `2px solid ${pendingAnnotation.isMultiSelect ? '#34C759' : '#3b82f6'}`,
+              backgroundColor: pendingAnnotation.isMultiSelect 
+                ? 'rgba(52, 199, 89, 0.1)' 
+                : 'rgba(59, 130, 246, 0.1)',
+              borderRadius: 4,
+              pointerEvents: 'none',
+              zIndex: zIndex + 2,
+              transition: 'opacity 0.15s ease',
+              opacity: pendingExiting ? 0 : 1,
+            }}
+          />
+
+          {/* Annotation popup */}
+          <AnnotationPopup
+            ref={popupRef}
+            element={pendingAnnotation.element}
+            selectedText={pendingAnnotation.selectedText}
+            placeholder={
+              pendingAnnotation.annotationType === 'drawing'
+                ? 'What does this drawing mean?'
+                : pendingAnnotation.isMultiSelect
+                  ? 'What should change about these elements?'
+                  : 'What should change?'
+            }
+            onSubmit={handleAnnotationSubmit}
+            onCancel={handleAnnotationCancel}
+            isExiting={pendingExiting}
+            isMultiSelect={pendingAnnotation.isMultiSelect}
+            accentColor={pendingAnnotation.isMultiSelect ? '#34C759' : '#3b82f6'}
+            style={{
+              // Position popup centered horizontally
+              left: Math.max(
+                160,
+                Math.min(
+                  window.innerWidth - 160,
+                  (pendingAnnotation.x / 100) * window.innerWidth
+                )
+              ),
+              // Position above or below based on viewport space
+              ...(pendingAnnotation.clientY > window.innerHeight - 250
+                ? { bottom: window.innerHeight - pendingAnnotation.clientY + 30 }
+                : { top: pendingAnnotation.clientY + 30 }),
+              zIndex: zIndex + 3,
+              pointerEvents: 'auto',
+            }}
+          />
+        </>
+      )}
 
       {/* Annotations sidebar */}
       <AnnotationsSidebar
