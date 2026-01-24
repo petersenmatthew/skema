@@ -17,7 +17,7 @@ Skema is a React component that provides a tldraw-powered drawing overlay for an
 
 ```bash
 # Install in your Next.js project
-pnpm add skema-core
+bun add skema-core
 ```
 
 ## Usage
@@ -43,7 +43,7 @@ export default function App() {
 
 ## Development
 
-This is a monorepo managed with pnpm workspaces.
+This is a monorepo managed with Bun workspaces.
 
 ### Structure
 
@@ -53,7 +53,6 @@ skema/
 │   ├── skema-core/     # Main React component library
 │   └── skema-example/  # Next.js demo application
 ├── package.json
-├── pnpm-workspace.yaml
 └── tsconfig.base.json
 ```
 
@@ -61,23 +60,23 @@ skema/
 
 ```bash
 # Install dependencies
-pnpm install
+bun install
 
 # Build the core package
-pnpm build
+bun run build
 
 # Run the example app
-pnpm example
+bun run example
 
 # Or run both in development mode
-pnpm dev
+bun run dev
 ```
 
 ### Scripts
 
-- `pnpm build` - Build the skema-core package
-- `pnpm dev` - Build core and run example in watch mode
-- `pnpm example` - Run the example Next.js app
+- `bun run build` - Build the skema-core package
+- `bun run dev` - Build core and run example in watch mode
+- `bun run example` - Run the example Next.js app
 
 ## Export Format
 

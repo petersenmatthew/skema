@@ -2,9 +2,13 @@
   "name": "skema-monorepo",
   "version": "0.0.1",
   "private": true,
+  "workspaces": [
+    "packages/skema-core",
+    "packages/skema-example"
+  ],
   "scripts": {
-    "dev": "pnpm --filter skema-core watch & pnpm --filter skema-example dev",
-    "build": "pnpm --filter skema-core build",
-    "example": "pnpm --filter skema-example dev"
+    "dev": "bun run --filter skema-core watch & bun run --filter skema-example dev",
+    "build": "bun run --filter skema-core build",
+    "example": "bun run --filter skema-example dev"
   }
 }
