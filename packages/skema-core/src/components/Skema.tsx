@@ -22,7 +22,7 @@ import {
   TLClickEventInfo,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
-import { DOMPickerTool } from '../tools/DOMPickerTool';
+
 import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox } from '../types';
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
@@ -31,15 +31,12 @@ import { createDOMSelection, shouldIgnoreElement } from '../utils/element-identi
 // Custom toolbar with DOM picker and lasso select
 const SkemaToolbar: React.FC = (props) => {
   const tools = useTools();
-  const isDomPickerSelected = useIsToolSelected(tools['dom-picker']);
+
   const isLassoSelected = useIsToolSelected(tools['lasso-select']);
 
   return (
     <DefaultToolbar {...props}>
-      <TldrawUiMenuItem
-        {...tools['dom-picker']}
-        isSelected={isDomPickerSelected}
-      />
+
       <TldrawUiMenuItem
         {...tools['lasso-select']}
         isSelected={isLassoSelected}
@@ -68,7 +65,7 @@ const LassoOverlay: React.FC = () => {
   // Convert points to SVG path
   const svgPath = useMemo(() => {
     if (lassoPoints.length < 2) return '';
-    
+
     // Build SVG path from points
     let path = `M ${lassoPoints[0].x} ${lassoPoints[0].y}`;
     for (let i = 1; i < lassoPoints.length; i++) {
@@ -85,11 +82,12 @@ const LassoOverlay: React.FC = () => {
     <svg className="tl-overlays__item" aria-hidden="true">
       <path
         d={svgPath}
-        fill="rgba(59, 130, 246, 0.1)"
-        stroke="rgba(59, 130, 246, 0.8)"
+        fill="none"
+        stroke="rgba(59, 130, 246, 1)"
         strokeWidth="calc(2px / var(--tl-zoom))"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeDasharray="4 4"
       />
     </svg>
   );
@@ -483,24 +481,61 @@ export const Skema: React.FC<SkemaProps> = ({
     // Find DOM elements in bounds
     const foundElements = findDOMElementsInBounds(viewportBounds);
 
-    // Create selections for found elements (avoid duplicates)
-    foundElements.forEach((el) => {
-      const selector = el.tagName.toLowerCase() +
-        (el.id ? `#${el.id}` : '') +
-        (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
+    // Check if Shift is held
+    const isShiftKey = editor.inputs.shiftKey;
 
-      // Check if already selected
-      const alreadySelected = domSelections.some(
-        (s) => s.selector === selector ||
-          (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
-            Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
-      );
+    if (!isShiftKey) {
+      // If Shift is NOT held, we want to Replace the selection.
+      // But we need to keep the logic that prevents duplicates within the NEW set.
 
-      if (!alreadySelected) {
-        const selection = createDOMSelection(el);
-        handleDOMSelect(selection);
-      }
-    });
+      const newSelections: DOMSelection[] = [];
+
+      foundElements.forEach((el) => {
+        const selector = el.tagName.toLowerCase() +
+          (el.id ? `#${el.id}` : '') +
+          (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
+
+        // Check if already in our NEW list
+        const alreadyInNewList = newSelections.some(
+          (s) => s.selector === selector ||
+            (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
+              Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
+        );
+
+        if (!alreadyInNewList) {
+          newSelections.push(createDOMSelection(el));
+        }
+      });
+
+      setDomSelections(newSelections);
+
+      // Update annotations: remove old domain selections, add new ones
+      setAnnotations(prev => {
+        const nonDomAnnotations = prev.filter(a => a.type !== 'dom_selection');
+        const newDomAnnotations = newSelections.map(s => ({ type: 'dom_selection', ...s } as Annotation));
+        return [...nonDomAnnotations, ...newDomAnnotations];
+      });
+
+    } else {
+      // If Shift IS held, we Append (existing logic)
+      foundElements.forEach((el) => {
+        const selector = el.tagName.toLowerCase() +
+          (el.id ? `#${el.id}` : '') +
+          (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
+
+        // Check if already selected (in current state)
+        const alreadySelected = domSelections.some(
+          (s) => s.selector === selector ||
+            (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
+              Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
+        );
+
+        if (!alreadySelected) {
+          const selection = createDOMSelection(el);
+          handleDOMSelect(selection);
+        }
+      });
+    }
   }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
 
   // Handle brush/drag selection to select DOM elements
@@ -516,20 +551,45 @@ export const Skema: React.FC<SkemaProps> = ({
     // Find DOM elements in bounds
     const foundElements = findDOMElementsInBounds(viewportBounds);
 
-    // Create selections for found elements (avoid duplicates)
-    foundElements.forEach((el) => {
-      const rect = el.getBoundingClientRect();
-      // Check if already selected by comparing position
-      const alreadySelected = domSelections.some(
-        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
-      );
+    // Check if Shift is held
+    const isShiftKey = editorRef.current?.inputs.shiftKey;
 
-      if (!alreadySelected) {
-        const selection = createDOMSelection(el);
-        handleDOMSelect(selection);
-      }
-    });
+    if (!isShiftKey) {
+      // Replace logic
+      const newSelections: DOMSelection[] = [];
+
+      foundElements.forEach((el) => {
+        // Dedupe logic for new list
+        const alreadyInNewList = newSelections.some(s =>
+          Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
+          Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5
+        );
+        if (!alreadyInNewList) {
+          newSelections.push(createDOMSelection(el));
+        }
+      });
+
+      setDomSelections(newSelections);
+      setAnnotations(prev => [
+        ...prev.filter(a => a.type !== 'dom_selection'),
+        ...newSelections.map(s => ({ type: 'dom_selection', ...s } as Annotation))
+      ]);
+    } else {
+      // Append logic
+      foundElements.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        // Check if already selected by comparing position
+        const alreadySelected = domSelections.some(
+          (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+            Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+        );
+
+        if (!alreadySelected) {
+          const selection = createDOMSelection(el);
+          handleDOMSelect(selection);
+        }
+      });
+    }
   }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
 
   // Check if a point is inside a polygon (ray casting algorithm)
@@ -577,16 +637,16 @@ export const Skema: React.FC<SkemaProps> = ({
 
     const allElements = document.querySelectorAll('*');
     const foundElements: HTMLElement[] = [];
-    
+
     allElements.forEach((el) => {
       if (!(el instanceof HTMLElement)) return;
       if (shouldIgnoreElement(el)) return;
-      
+
       const rect = el.getBoundingClientRect();
-      
+
       // Skip tiny elements
       if (rect.width < 10 || rect.height < 10) return;
-      
+
       // Check if element bounding box overlaps with lasso bounding box (any touch = selected)
       const boundsOverlap = !(
         rect.left > lassoMaxX ||
@@ -608,20 +668,46 @@ export const Skema: React.FC<SkemaProps> = ({
       }
     });
 
-    // Create selections for found elements (avoid duplicates)
-    foundElements.forEach((el) => {
-      const rect = el.getBoundingClientRect();
-      // Check if already selected by comparing position
-      const alreadySelected = domSelections.some(
-        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-               Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
-      );
-      
-      if (!alreadySelected) {
-        const selection = createDOMSelection(el);
-        handleDOMSelect(selection);
-      }
-    });
+    // Check if Shift is held
+    const isShiftKey = editorRef.current?.inputs.shiftKey;
+
+    if (!isShiftKey) {
+      // Replace logic
+      const newSelections: DOMSelection[] = [];
+
+      foundElements.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        // Dedupe logic for new list
+        const alreadyInNewList = newSelections.some(s =>
+          Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+        );
+        if (!alreadyInNewList) {
+          newSelections.push(createDOMSelection(el));
+        }
+      });
+
+      setDomSelections(newSelections);
+      setAnnotations(prev => [
+        ...prev.filter(a => a.type !== 'dom_selection'),
+        ...newSelections.map(s => ({ type: 'dom_selection', ...s } as Annotation))
+      ]);
+    } else {
+      // Create selections for found elements (avoid duplicates)
+      foundElements.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        // Check if already selected by comparing position
+        const alreadySelected = domSelections.some(
+          (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+            Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+        );
+
+        if (!alreadySelected) {
+          const selection = createDOMSelection(el);
+          handleDOMSelect(selection);
+        }
+      });
+    }
   }, [isPointInPolygon, domSelections, handleDOMSelect]);
 
   // Editor mount handler
@@ -676,12 +762,8 @@ export const Skema: React.FC<SkemaProps> = ({
       }
     });
 
-    // Get the DOM picker tool instance and set callback
-    const domPickerTool = editor.root.children?.['dom-picker'] as DOMPickerTool | undefined;
-    if (domPickerTool && 'setOnSelect' in domPickerTool) {
-      domPickerTool.setOnSelect(handleDOMSelect);
-    }
-    
+
+
     // Get the lasso select tool instance and set callbacks
     const lassoSelectTool = editor.root.children?.['lasso-select'] as LassoSelectTool | undefined;
     if (lassoSelectTool) {
@@ -692,7 +774,7 @@ export const Skema: React.FC<SkemaProps> = ({
           setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
         });
       }
-      
+
       // Set lasso complete callback (for selecting DOM elements)
       if ('setOnLassoComplete' in lassoSelectTool) {
         lassoSelectTool.setOnLassoComplete((points) => {
@@ -700,7 +782,7 @@ export const Skema: React.FC<SkemaProps> = ({
         });
       }
     }
-    
+
     // Track brush selection for drag-selecting DOM elements
     let lastBrush: { x: number; y: number; w: number; h: number } | null = null;
 
@@ -795,15 +877,7 @@ export const Skema: React.FC<SkemaProps> = ({
     tools(editor, tools) {
       return {
         ...tools,
-        'dom-picker': {
-          id: 'dom-picker',
-          label: 'DOM Picker',
-          icon: 'external-link',
-          kbd: 'p',
-          onSelect: () => {
-            editor.setCurrentTool('dom-picker');
-          },
-        },
+
         'lasso-select': {
           id: 'lasso-select',
           label: 'Lasso Select',
@@ -840,7 +914,7 @@ export const Skema: React.FC<SkemaProps> = ({
         }}
       >
         <Tldraw
-          tools={[DOMPickerTool, LassoSelectTool]}
+          tools={[LassoSelectTool]}
           components={components}
           overrides={overrides}
           onMount={handleMount}

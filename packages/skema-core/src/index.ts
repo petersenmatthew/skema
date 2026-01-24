@@ -15,7 +15,7 @@
 export { Skema, default } from './components';
 
 // Tools
-export { DOMPickerTool } from './tools';
+
 
 // Utilities
 export {
@@ -52,5 +52,5 @@ export type {
   SkemaMode,
   SkemaProps,
   ViewportInfo,
-  DOMPickerState,
+
 } from './types';

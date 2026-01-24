@@ -66,7 +66,7 @@ export interface GestureAnnotation {
 /**
  * Union type for all annotation types
  */
-export type Annotation = 
+export type Annotation =
   | { type: 'dom_selection' } & DOMSelection
   | DrawingAnnotation
   | GestureAnnotation;
@@ -101,13 +101,6 @@ export interface SkemaProps {
 /**
  * Skema mode - determines what tools are available
  */
-export type SkemaMode = 'select' | 'draw' | 'dom-pick';
+export type SkemaMode = 'select' | 'draw';
 
-/**
- * DOM Picker state
- */
-export interface DOMPickerState {
-  isActive: boolean;
-  hoveredElement: HTMLElement | null;
-  selectedElements: DOMSelection[];
-}
+
