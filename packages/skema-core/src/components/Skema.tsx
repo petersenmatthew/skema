@@ -20,6 +20,7 @@ import {
   TLShapeId,
   StateNode,
   TLClickEventInfo,
+  ArrowShapeKindStyle,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 
@@ -399,7 +400,7 @@ export const Skema: React.FC<SkemaProps> = ({
     const editor = editorRef.current;
     const selectedIds = editor.getSelectedShapeIds();
     const shapes = selectedIds.map(id => editor.getShape(id)).filter(Boolean);
-    return shapes.filter(shape => 
+    return shapes.filter(shape =>
       shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
     );
   }, []);
@@ -409,18 +410,18 @@ export const Skema: React.FC<SkemaProps> = ({
     // Check if there are also drawings selected
     const selectedDrawings = getSelectedDrawings();
     const hasDrawings = selectedDrawings.length > 0;
-    
+
     // Calculate popup position
     const rect = selection.boundingBox;
     const x = ((rect.x + rect.width / 2) / window.innerWidth) * 100;
     const clientY = rect.y - window.scrollY + rect.height / 2;
-    
+
     // Build element description
     let elementDesc = selection.tagName;
     if (hasDrawings) {
       elementDesc = `Drawing + ${selection.tagName}`;
     }
-    
+
     // Set pending annotation to show popup
     setPendingAnnotation({
       x,
@@ -440,40 +441,40 @@ export const Skema: React.FC<SkemaProps> = ({
   // Handle multi-element selection (from lasso/brush) - shows popup for all selected
   const handleMultiDOMSelect = useCallback((selections: DOMSelection[]) => {
     if (selections.length === 0) return;
-    
+
     // Check if there are also drawings selected
     const selectedDrawings = getSelectedDrawings();
     const hasDrawings = selectedDrawings.length > 0;
-    
+
     // Calculate combined bounding box
     const minX = Math.min(...selections.map(s => s.boundingBox.x));
     const minY = Math.min(...selections.map(s => s.boundingBox.y));
     const maxX = Math.max(...selections.map(s => s.boundingBox.x + s.boundingBox.width));
     const maxY = Math.max(...selections.map(s => s.boundingBox.y + s.boundingBox.height));
-    
+
     const combinedBounds: BoundingBox = {
       x: minX,
       y: minY,
       width: maxX - minX,
       height: maxY - minY,
     };
-    
+
     const centerX = minX + (maxX - minX) / 2;
     const centerY = minY + (maxY - minY) / 2;
     const x = (centerX / window.innerWidth) * 100;
     const clientY = centerY - window.scrollY;
-    
+
     // Build element description
     const elementNames = selections.slice(0, 3).map(s => s.tagName).join(', ');
     const suffix = selections.length > 3 ? ` +${selections.length - 3} more` : '';
     let element = `${selections.length} elements: ${elementNames}${suffix}`;
-    
+
     // Add drawing info if present
     if (hasDrawings) {
       const drawingCount = selectedDrawings.length;
       element = `Drawing (${drawingCount}) + ${element}`;
     }
-    
+
     setPendingAnnotation({
       x,
       y: centerY,
@@ -491,14 +492,14 @@ export const Skema: React.FC<SkemaProps> = ({
   // Submit annotation from popup
   const handleAnnotationSubmit = useCallback((comment: string) => {
     if (!pendingAnnotation) return;
-    
+
     if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
       // Add all DOM selections with the comment
       const newSelections = pendingAnnotation.selections.map(selection => ({
         ...selection,
         comment,
       }));
-      
+
       setDomSelections((prev) => [...prev, ...newSelections]);
       setAnnotations((prev) => [
         ...prev,
@@ -516,7 +517,7 @@ export const Skema: React.FC<SkemaProps> = ({
       };
       setAnnotations((prev) => [...prev, drawingAnnotation]);
     }
-    
+
     // Animate out and clear
     setPendingExiting(true);
     setTimeout(() => {
@@ -615,7 +616,7 @@ export const Skema: React.FC<SkemaProps> = ({
     if (!selectionBounds) return;
 
     // Check if these are drawing shapes
-    const drawingShapes = selectedShapes.filter(shape => 
+    const drawingShapes = selectedShapes.filter(shape =>
       shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
     );
 
@@ -692,7 +693,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     // Create selections and show popup
     const selections = newElements.map(el => createDOMSelection(el));
-    
+
     if (selections.length === 1) {
       handleDOMSelect(selections[0]);
     } else {
@@ -781,7 +782,7 @@ export const Skema: React.FC<SkemaProps> = ({
       const rect = el.getBoundingClientRect();
       return !domSelections.some(
         (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-               Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
       );
     });
 
@@ -789,7 +790,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     // Create selections and show popup
     const selections = newElements.map(el => createDOMSelection(el));
-    
+
     if (selections.length === 1) {
       handleDOMSelect(selections[0]);
     } else {
@@ -801,10 +802,13 @@ export const Skema: React.FC<SkemaProps> = ({
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
+    // Set default arrow style to arc (curved)
+    editor.setStyleForNextShapes(ArrowShapeKindStyle, 'arc');
+
     // Override double click behavior to disable text creation and select DOM elements
     // See: https://tldraw.dev/examples/custom-double-click-behavior
     try {
-      type IdleStateNode = StateNode & { 
+      type IdleStateNode = StateNode & {
         handleDoubleClickOnCanvas(info: TLClickEventInfo): void;
         handleDoubleClickOnShape?(info: TLClickEventInfo, shape: any): void;
       };
@@ -836,7 +840,7 @@ export const Skema: React.FC<SkemaProps> = ({
             const rect = selection.boundingBox;
             const x = ((rect.x + rect.width / 2) / window.innerWidth) * 100;
             const clientY = rect.y - window.scrollY + rect.height / 2;
-            
+
             setPendingAnnotation({
               x,
               y: rect.y + rect.height / 2,
@@ -852,7 +856,7 @@ export const Skema: React.FC<SkemaProps> = ({
           }
         };
 
-          }
+      }
     } catch (e) {
       console.warn('Failed to override double click behavior', e);
     }
@@ -919,13 +923,13 @@ export const Skema: React.FC<SkemaProps> = ({
     editor.sideEffects.registerAfterChangeHandler('instance_page_state', (prev, next) => {
       if (prev.selectedShapeIds !== next.selectedShapeIds) {
         const selectedIds = next.selectedShapeIds;
-        
+
         // Clear any pending timeout
         if (drawingCompleteTimeout) {
           clearTimeout(drawingCompleteTimeout);
           drawingCompleteTimeout = null;
         }
-        
+
         if (selectedIds.length > 0) {
           // Debounce to ensure selection is stable (drawing is complete)
           drawingCompleteTimeout = setTimeout(() => {
@@ -934,13 +938,13 @@ export const Skema: React.FC<SkemaProps> = ({
             if (currentTool !== 'select') {
               return;
             }
-            
+
             // Check if selected shapes are drawings
             const shapes = selectedIds.map(id => editor.getShape(id)).filter(Boolean);
-            const hasDrawings = shapes.some(shape => 
+            const hasDrawings = shapes.some(shape =>
               shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
             );
-            
+
             if (hasDrawings) {
               handleDrawingAnnotation([...selectedIds] as TLShapeId[]);
             }
@@ -960,7 +964,7 @@ export const Skema: React.FC<SkemaProps> = ({
       if (e.button !== 0) return;
 
       const target = e.target as HTMLElement;
-      
+
       // If clicking on the popup, don't do anything
       if (target.closest('[data-skema="annotation-popup"]')) return;
 
@@ -1086,8 +1090,8 @@ export const Skema: React.FC<SkemaProps> = ({
               width: pendingAnnotation.boundingBox.width,
               height: pendingAnnotation.boundingBox.height,
               border: `2px solid ${pendingAnnotation.isMultiSelect ? '#34C759' : '#3b82f6'}`,
-              backgroundColor: pendingAnnotation.isMultiSelect 
-                ? 'rgba(52, 199, 89, 0.1)' 
+              backgroundColor: pendingAnnotation.isMultiSelect
+                ? 'rgba(52, 199, 89, 0.1)'
                 : 'rgba(59, 130, 246, 0.1)',
               borderRadius: 4,
               pointerEvents: 'none',
