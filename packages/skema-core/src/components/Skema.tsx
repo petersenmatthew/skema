@@ -2,7 +2,7 @@
 // Skema - Main Drawing Overlay Component
 // =============================================================================
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Tldraw,
   TLComponents,
@@ -10,9 +10,11 @@ import {
   DefaultToolbar,
   DefaultToolbarContent,
   TldrawUiMenuItem,
+  TldrawOverlays,
   useTools,
   useIsToolSelected,
   useEditor,
+  useValue,
   Editor,
   TLUiActionsContextType,
   TLShapeId,
@@ -21,14 +23,16 @@ import {
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DOMPickerTool } from '../tools/DOMPickerTool';
+import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox } from '../types';
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
 import { createDOMSelection, shouldIgnoreElement } from '../utils/element-identification';
 
-// Custom toolbar with DOM picker
+// Custom toolbar with DOM picker and lasso select
 const SkemaToolbar: React.FC = (props) => {
   const tools = useTools();
   const isDomPickerSelected = useIsToolSelected(tools['dom-picker']);
+  const isLassoSelected = useIsToolSelected(tools['lasso-select']);
 
   return (
     <DefaultToolbar {...props}>
@@ -36,8 +40,68 @@ const SkemaToolbar: React.FC = (props) => {
         {...tools['dom-picker']}
         isSelected={isDomPickerSelected}
       />
+      <TldrawUiMenuItem
+        {...tools['lasso-select']}
+        isSelected={isLassoSelected}
+      />
       <DefaultToolbarContent />
     </DefaultToolbar>
+  );
+};
+
+// Lasso overlay component - renders the lasso path while drawing
+const LassoOverlay: React.FC = () => {
+  const editor = useEditor();
+
+  // Reactively get lasso points from the tool state
+  const lassoPoints = useValue(
+    'lasso points',
+    () => {
+      if (!editor.isIn('lasso-select.lassoing')) return [];
+      // Use getStateDescendant to get the lassoing state (as per tldraw docs)
+      const lassoing = editor.getStateDescendant('lasso-select.lassoing') as LassoingState | undefined;
+      return lassoing?.points?.get() ?? [];
+    },
+    [editor]
+  );
+
+  // Convert points to SVG path
+  const svgPath = useMemo(() => {
+    if (lassoPoints.length < 2) return '';
+    
+    // Build SVG path from points
+    let path = `M ${lassoPoints[0].x} ${lassoPoints[0].y}`;
+    for (let i = 1; i < lassoPoints.length; i++) {
+      path += ` L ${lassoPoints[i].x} ${lassoPoints[i].y}`;
+    }
+    // Close the path
+    path += ' Z';
+    return path;
+  }, [lassoPoints]);
+
+  if (lassoPoints.length === 0) return null;
+
+  return (
+    <svg className="tl-overlays__item" aria-hidden="true">
+      <path
+        d={svgPath}
+        fill="rgba(59, 130, 246, 0.1)"
+        stroke="rgba(59, 130, 246, 0.8)"
+        strokeWidth="calc(2px / var(--tl-zoom))"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+};
+
+// Custom overlays including lasso
+const SkemaOverlays: React.FC = () => {
+  return (
+    <>
+      <TldrawOverlays />
+      <LassoOverlay />
+    </>
   );
 };
 
@@ -468,6 +532,98 @@ export const Skema: React.FC<SkemaProps> = ({
     });
   }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
 
+  // Check if a point is inside a polygon (ray casting algorithm)
+  const isPointInPolygon = useCallback((point: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean => {
+    let inside = false;
+    const n = polygon.length;
+
+    for (let i = 0, j = n - 1; i < n; j = i++) {
+      const xi = polygon[i].x;
+      const yi = polygon[i].y;
+      const xj = polygon[j].x;
+      const yj = polygon[j].y;
+
+      const intersect =
+        yi > point.y !== yj > point.y &&
+        point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi;
+
+      if (intersect) {
+        inside = !inside;
+      }
+    }
+
+    return inside;
+  }, []);
+
+  // Handle lasso selection to select DOM elements that touch the lasso area
+  const handleLassoSelection = useCallback((lassoPoints: { x: number; y: number }[]) => {
+    if (lassoPoints.length < 3) return;
+
+    // Convert lasso points from page coordinates to viewport coordinates
+    const viewportPoints = lassoPoints.map(p => ({
+      x: p.x - window.scrollX,
+      y: p.y - window.scrollY,
+    }));
+
+    // Get lasso bounding box for quick intersection check
+    let lassoMinX = Infinity, lassoMinY = Infinity;
+    let lassoMaxX = -Infinity, lassoMaxY = -Infinity;
+    for (const p of viewportPoints) {
+      lassoMinX = Math.min(lassoMinX, p.x);
+      lassoMinY = Math.min(lassoMinY, p.y);
+      lassoMaxX = Math.max(lassoMaxX, p.x);
+      lassoMaxY = Math.max(lassoMaxY, p.y);
+    }
+
+    const allElements = document.querySelectorAll('*');
+    const foundElements: HTMLElement[] = [];
+    
+    allElements.forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (shouldIgnoreElement(el)) return;
+      
+      const rect = el.getBoundingClientRect();
+      
+      // Skip tiny elements
+      if (rect.width < 10 || rect.height < 10) return;
+      
+      // Check if element bounding box overlaps with lasso bounding box (any touch = selected)
+      const boundsOverlap = !(
+        rect.left > lassoMaxX ||
+        rect.right < lassoMinX ||
+        rect.top > lassoMaxY ||
+        rect.bottom < lassoMinY
+      );
+
+      if (boundsOverlap) {
+        // Check if this element is not a parent of already added elements
+        const isParent = foundElements.some((existing) => el.contains(existing));
+        if (!isParent) {
+          // Remove any children of this element that were already added
+          const filtered = foundElements.filter((existing) => !existing.contains(el) && !el.contains(existing));
+          filtered.push(el);
+          foundElements.length = 0;
+          foundElements.push(...filtered);
+        }
+      }
+    });
+
+    // Create selections for found elements (avoid duplicates)
+    foundElements.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      // Check if already selected by comparing position
+      const alreadySelected = domSelections.some(
+        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+               Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+      );
+      
+      if (!alreadySelected) {
+        const selection = createDOMSelection(el);
+        handleDOMSelect(selection);
+      }
+    });
+  }, [isPointInPolygon, domSelections, handleDOMSelect]);
+
   // Editor mount handler
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
@@ -525,7 +681,26 @@ export const Skema: React.FC<SkemaProps> = ({
     if (domPickerTool && 'setOnSelect' in domPickerTool) {
       domPickerTool.setOnSelect(handleDOMSelect);
     }
-
+    
+    // Get the lasso select tool instance and set callbacks
+    const lassoSelectTool = editor.root.children?.['lasso-select'] as LassoSelectTool | undefined;
+    if (lassoSelectTool) {
+      // Set clear selections callback (for single click)
+      if ('setOnClearSelections' in lassoSelectTool) {
+        lassoSelectTool.setOnClearSelections(() => {
+          setDomSelections([]);
+          setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
+        });
+      }
+      
+      // Set lasso complete callback (for selecting DOM elements)
+      if ('setOnLassoComplete' in lassoSelectTool) {
+        lassoSelectTool.setOnLassoComplete((points) => {
+          handleLassoSelection(points);
+        });
+      }
+    }
+    
     // Track brush selection for drag-selecting DOM elements
     let lastBrush: { x: number; y: number; w: number; h: number } | null = null;
 
@@ -561,7 +736,7 @@ export const Skema: React.FC<SkemaProps> = ({
       }
       return;
     });
-  }, [handleDOMSelect, handleSelectionChange, handleBrushSelection]);
+  }, [handleDOMSelect, handleSelectionChange, handleBrushSelection, handleLassoSelection]);
 
   // Handle single click to clear DOM selections
   useEffect(() => {
@@ -603,6 +778,7 @@ export const Skema: React.FC<SkemaProps> = ({
   // Custom components
   const components: TLComponents = {
     Toolbar: SkemaToolbar,
+    Overlays: SkemaOverlays,
     // Hide background to make canvas transparent (so website shows through)
     Background: null,
     // Hide some UI elements we don't need
@@ -610,9 +786,11 @@ export const Skema: React.FC<SkemaProps> = ({
     MenuPanel: null,
     TopPanel: null,
     PageMenu: null,
+    NavigationPanel: null,
+    HelpMenu: null,
   };
 
-  // UI overrides to add DOM picker tool
+  // UI overrides to add DOM picker and lasso select tools
   const overrides: TLUiOverrides = {
     tools(editor, tools) {
       return {
@@ -624,6 +802,15 @@ export const Skema: React.FC<SkemaProps> = ({
           kbd: 'p',
           onSelect: () => {
             editor.setCurrentTool('dom-picker');
+          },
+        },
+        'lasso-select': {
+          id: 'lasso-select',
+          label: 'Lasso Select',
+          icon: 'blob',
+          kbd: 'l',
+          onSelect: () => {
+            editor.setCurrentTool('lasso-select');
           },
         },
       };
@@ -653,7 +840,7 @@ export const Skema: React.FC<SkemaProps> = ({
         }}
       >
         <Tldraw
-          tools={[DOMPickerTool]}
+          tools={[DOMPickerTool, LassoSelectTool]}
           components={components}
           overrides={overrides}
           onMount={handleMount}
