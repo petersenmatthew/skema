@@ -814,9 +814,28 @@ export const Skema: React.FC<SkemaProps> = ({
 
     if (selectedShapes.length === 0) return;
 
-    // Get the combined bounds of all selected shapes
-    const selectionBounds = editor.getSelectionPageBounds();
-    if (!selectionBounds) return;
+    // Calculate bounds from shapes directly (more reliable than selection bounds)
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    for (const shape of selectedShapes) {
+      if (!shape) continue;
+      const bounds = editor.getShapePageBounds(shape.id);
+      if (bounds) {
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
+      }
+    }
+
+    if (minX === Infinity) return;
+    
+    const selectionBounds = {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY,
+    };
 
     // Check if these are drawing shapes
     const drawingShapes = selectedShapes.filter(shape =>
@@ -1112,50 +1131,54 @@ export const Skema: React.FC<SkemaProps> = ({
     });
 
     // Track when drawing is complete to show annotation popup
-    let isMouseDown = false;
-    let pendingDrawingIds: TLShapeId[] | null = null;
+    // We track shapes created during a drawing session and show popup when drawing ends
+    let shapesCreatedThisSession: TLShapeId[] = [];
+    let isDrawing = false;
+    let drawingCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 
-    // Track mouse state to only show popup after mouse release
-    const handleMouseDown = () => {
-      isMouseDown = true;
-    };
-    
-    const handleMouseUp = () => {
-      isMouseDown = false;
-      // If we have pending drawing IDs, show the popup now
-      if (pendingDrawingIds && pendingDrawingIds.length > 0) {
-        const ids = pendingDrawingIds;
-        pendingDrawingIds = null;
-        // Small delay to ensure everything is settled
-        setTimeout(() => {
-          handleDrawingAnnotation(ids);
-        }, 50);
-      }
-    };
-
-    document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    // Listen for new shape creation to detect when drawing finishes
+    // Listen for new shape creation
     editor.sideEffects.registerAfterCreateHandler('shape', (shape) => {
       // Check if this is a drawing shape
       if (['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)) {
-        // Queue this shape for annotation popup on mouse release
-        if (isMouseDown) {
-          pendingDrawingIds = [shape.id];
-        } else {
-          // Mouse already released (rare case), show popup immediately
-          setTimeout(() => {
-            handleDrawingAnnotation([shape.id]);
-          }, 100);
-        }
+        shapesCreatedThisSession.push(shape.id);
+        isDrawing = true;
       }
     });
 
+    // Handle pointer up on the canvas to detect drawing completion
+    const handlePointerUp = (e: PointerEvent) => {
+      // Only process if we were drawing
+      if (!isDrawing || shapesCreatedThisSession.length === 0) return;
+      
+      // Clear any pending check
+      if (drawingCheckTimeout) {
+        clearTimeout(drawingCheckTimeout);
+      }
+
+      // Wait a moment to ensure the drawing is fully complete
+      drawingCheckTimeout = setTimeout(() => {
+        if (shapesCreatedThisSession.length > 0) {
+          const shapeIds = [...shapesCreatedThisSession];
+          shapesCreatedThisSession = [];
+          isDrawing = false;
+          
+          // Verify shapes exist and show popup
+          const validIds = shapeIds.filter(id => editor.getShape(id));
+          if (validIds.length > 0) {
+            handleDrawingAnnotation(validIds as TLShapeId[]);
+          }
+        }
+      }, 200);
+    };
+
+    document.addEventListener('pointerup', handlePointerUp);
+
     // Store cleanup function in ref for component unmount
     cleanupRef.current = () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('pointerup', handlePointerUp);
+      if (drawingCheckTimeout) {
+        clearTimeout(drawingCheckTimeout);
+      }
     };
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
 
