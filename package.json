@@ -1,0 +1,10 @@
+{
+  "name": "skema-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter skema-core watch & pnpm --filter skema-example dev",
+    "build": "pnpm --filter skema-core build",
+    "example": "pnpm --filter skema-example dev"
+  }
+}
