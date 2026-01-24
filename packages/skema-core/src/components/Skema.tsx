@@ -243,6 +243,7 @@ export const Skema: React.FC<SkemaProps> = ({
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [domSelections, setDomSelections] = useState<DOMSelection[]>([]);
   const editorRef = useRef<Editor | null>(null);
+  const lastDoubleClickRef = useRef<number>(0);
 
   // Handle keyboard shortcut to toggle
   useEffect(() => {
@@ -477,9 +478,30 @@ export const Skema: React.FC<SkemaProps> = ({
       type IdleStateNode = StateNode & { handleDoubleClickOnCanvas(info: TLClickEventInfo): void };
       const selectIdleState = editor.getStateDescendant<IdleStateNode>('select.idle');
       if (selectIdleState) {
-        selectIdleState.handleDoubleClickOnCanvas = (_info) => {
-          // Do nothing - disable default text box creation
-          // We can add custom behavior here if needed later
+        selectIdleState.handleDoubleClickOnCanvas = (info) => {
+          // Record double click time to prevent immediate clearing by pointerdown handler
+          lastDoubleClickRef.current = Date.now();
+
+          // Find DOM element at the clicked position
+          const point = editor.pageToViewport(info.point);
+          const elements = document.elementsFromPoint(point.x, point.y);
+
+          // Find the first valid DOM element (ignoring overlay/UI)
+          const target = elements.find(el =>
+            el instanceof HTMLElement && !shouldIgnoreElement(el as HTMLElement)
+          ) as HTMLElement | undefined;
+
+          if (target) {
+            // If shift is not held, replace the selection (clear others first)
+            // If shift IS held, we just append (which handleDOMSelect does)
+            if (!info.shiftKey) {
+              setDomSelections([]);
+              setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
+            }
+
+            const selection = createDOMSelection(target);
+            handleDOMSelect(selection);
+          }
         };
       }
     } catch (e) {
@@ -559,10 +581,12 @@ export const Skema: React.FC<SkemaProps> = ({
         if (!editorRef.current) return;
 
         // If no brush is active and no shapes are selected, clear DOM selections
+        // Also check if we just double clicked (within last 300ms) - if so, don't clear
         const instance = editorRef.current.getInstanceState();
         const hasShapesSelected = editorRef.current.getSelectedShapeIds().length > 0;
+        const isRecentDoubleClick = Date.now() - lastDoubleClickRef.current < 300;
 
-        if (!instance.brush && !hasShapesSelected) {
+        if (!instance.brush && !hasShapesSelected && !isRecentDoubleClick) {
           setDomSelections([]);
           setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
         }
