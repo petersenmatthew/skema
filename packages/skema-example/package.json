@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "dev": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next dev",
+    "build": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next build",
+    "start": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next start",
+    "lint": "bun x next lint"
   },
   "dependencies": {
     "next": "^14.0.0",
@@ -15,6 +15,7 @@
     "skema-core": "workspace:*"
   },
   "devDependencies": {
+    "@types/bun": "latest",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",

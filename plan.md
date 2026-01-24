@@ -56,13 +56,13 @@ Skema is a revolutionary development tool that transforms website development in
 
 ```bash
 # Install dependencies
-pnpm install
+bun install
 
 # Build the core package
-pnpm build
+bun run build
 
 # Run the example app
-pnpm example
+bun run example
 ```
 
 Then open http://localhost:3000 and press **⌘⇧E** (or Ctrl+Shift+E on Windows/Linux) to toggle the Skema overlay.
