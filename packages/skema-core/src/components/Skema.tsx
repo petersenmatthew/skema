@@ -16,6 +16,8 @@ import {
   Editor,
   TLUiActionsContextType,
   TLShapeId,
+  StateNode,
+  TLClickEventInfo,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DOMPickerTool } from '../tools/DOMPickerTool';
@@ -44,7 +46,7 @@ const SkemaToolbar: React.FC = (props) => {
 const SelectionOverlay: React.FC<{ selections: DOMSelection[] }> = ({ selections }) => {
   // Track scroll position to trigger re-renders
   const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
-  
+
   useEffect(() => {
     const handleScroll = () => {
       setScrollPos({ x: window.scrollX, y: window.scrollY });
@@ -258,7 +260,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
   // Track scroll position to sync tldraw camera with page
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
-  
+
   // Sync scroll position with tldraw camera
   useEffect(() => {
     if (!isActive) return;
@@ -266,7 +268,7 @@ export const Skema: React.FC<SkemaProps> = ({
     const syncScroll = () => {
       const newOffset = { x: window.scrollX, y: window.scrollY };
       setScrollOffset(newOffset);
-      
+
       // Update tldraw camera to match scroll position
       if (editorRef.current) {
         editorRef.current.setCamera({ x: -newOffset.x, y: -newOffset.y, z: 1 });
@@ -278,7 +280,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     // Listen for scroll events
     window.addEventListener('scroll', syncScroll, { passive: true });
-    
+
     return () => {
       window.removeEventListener('scroll', syncScroll);
     };
@@ -294,7 +296,7 @@ export const Skema: React.FC<SkemaProps> = ({
       if (target.closest('.tl-container') || target.closest('[data-skema="container"]')) {
         // Stop tldraw from handling it
         e.stopPropagation();
-        
+
         // Manually scroll the page
         window.scrollBy({
           top: e.deltaY,
@@ -306,7 +308,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     // Capture phase to intercept before tldraw
     document.addEventListener('wheel', handleWheel, { capture: true, passive: false });
-    
+
     return () => {
       document.removeEventListener('wheel', handleWheel, { capture: true });
     };
@@ -348,10 +350,10 @@ export const Skema: React.FC<SkemaProps> = ({
 
     // Copy to clipboard
     navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
-    
+
     // Also log to console for development
     console.log('[Skema] Exported annotations:', exportData);
-    
+
     alert('Annotations copied to clipboard!');
   }, [annotations]);
 
@@ -359,11 +361,11 @@ export const Skema: React.FC<SkemaProps> = ({
   const findDOMElementsInBounds = useCallback((bounds: BoundingBox): HTMLElement[] => {
     const elements: HTMLElement[] = [];
     const allElements = document.querySelectorAll('*');
-    
+
     allElements.forEach((el) => {
       if (!(el instanceof HTMLElement)) return;
       if (shouldIgnoreElement(el)) return;
-      
+
       const rect = el.getBoundingClientRect();
       const elBounds: BoundingBox = {
         x: rect.left,
@@ -371,10 +373,10 @@ export const Skema: React.FC<SkemaProps> = ({
         width: rect.width,
         height: rect.height,
       };
-      
+
       // Skip tiny elements
       if (elBounds.width < 10 || elBounds.height < 10) return;
-      
+
       if (bboxIntersects(bounds, elBounds)) {
         // Check if this element is not a parent of already added elements
         const isParent = elements.some((existing) => el.contains(existing));
@@ -387,23 +389,23 @@ export const Skema: React.FC<SkemaProps> = ({
         }
       }
     });
-    
+
     return elements;
   }, []);
 
   // Handle selection changes from tldraw
   const handleSelectionChange = useCallback((selectedIds: TLShapeId[]) => {
     if (!editorRef.current || selectedIds.length === 0) return;
-    
+
     const editor = editorRef.current;
     const selectedShapes = selectedIds.map((id) => editor.getShape(id)).filter(Boolean);
-    
+
     if (selectedShapes.length === 0) return;
-    
+
     // Get the combined bounds of all selected shapes
     const selectionBounds = editor.getSelectionPageBounds();
     if (!selectionBounds) return;
-    
+
     // Tldraw shapes are now in document coordinates (camera synced with scroll)
     // Convert to viewport coordinates for DOM element matching
     const viewportBounds: BoundingBox = {
@@ -412,23 +414,23 @@ export const Skema: React.FC<SkemaProps> = ({
       width: selectionBounds.width,
       height: selectionBounds.height,
     };
-    
+
     // Find DOM elements in bounds
     const foundElements = findDOMElementsInBounds(viewportBounds);
-    
+
     // Create selections for found elements (avoid duplicates)
     foundElements.forEach((el) => {
-      const selector = el.tagName.toLowerCase() + 
-        (el.id ? `#${el.id}` : '') + 
+      const selector = el.tagName.toLowerCase() +
+        (el.id ? `#${el.id}` : '') +
         (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
-      
+
       // Check if already selected
       const alreadySelected = domSelections.some(
-        (s) => s.selector === selector || 
-               (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
-                Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
+        (s) => s.selector === selector ||
+          (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
+            Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
       );
-      
+
       if (!alreadySelected) {
         const selection = createDOMSelection(el);
         handleDOMSelect(selection);
@@ -445,19 +447,19 @@ export const Skema: React.FC<SkemaProps> = ({
       width: brushBounds.width,
       height: brushBounds.height,
     };
-    
+
     // Find DOM elements in bounds
     const foundElements = findDOMElementsInBounds(viewportBounds);
-    
+
     // Create selections for found elements (avoid duplicates)
     foundElements.forEach((el) => {
       const rect = el.getBoundingClientRect();
       // Check if already selected by comparing position
       const alreadySelected = domSelections.some(
         (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-               Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
       );
-      
+
       if (!alreadySelected) {
         const selection = createDOMSelection(el);
         handleDOMSelect(selection);
@@ -469,9 +471,24 @@ export const Skema: React.FC<SkemaProps> = ({
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
+    // Override double click behavior to disable text creation
+    // See: https://tldraw.dev/examples/custom-double-click-behavior
+    try {
+      type IdleStateNode = StateNode & { handleDoubleClickOnCanvas(info: TLClickEventInfo): void };
+      const selectIdleState = editor.getStateDescendant<IdleStateNode>('select.idle');
+      if (selectIdleState) {
+        selectIdleState.handleDoubleClickOnCanvas = (_info) => {
+          // Do nothing - disable default text box creation
+          // We can add custom behavior here if needed later
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to override double click behavior', e);
+    }
+
     // Set initial camera to match current scroll position
     editor.setCamera({ x: -window.scrollX, y: -window.scrollY, z: 1 });
-    
+
     // Prevent zoom changes (only allow position changes for scroll sync)
     editor.sideEffects.registerAfterChangeHandler('camera', () => {
       const camera = editor.getCamera();
@@ -486,10 +503,10 @@ export const Skema: React.FC<SkemaProps> = ({
     if (domPickerTool && 'setOnSelect' in domPickerTool) {
       domPickerTool.setOnSelect(handleDOMSelect);
     }
-    
+
     // Track brush selection for drag-selecting DOM elements
     let lastBrush: { x: number; y: number; w: number; h: number } | null = null;
-    
+
     editor.sideEffects.registerAfterChangeHandler('instance', (prev, next) => {
       // Check if brush selection just ended
       if (prev.brush && !next.brush && lastBrush) {
@@ -508,7 +525,7 @@ export const Skema: React.FC<SkemaProps> = ({
       }
       return;
     });
-    
+
     // Listen for selection changes using sideEffects
     editor.sideEffects.registerAfterChangeHandler('instance_page_state', (prev, next) => {
       if (prev.selectedShapeIds !== next.selectedShapeIds) {
@@ -527,31 +544,31 @@ export const Skema: React.FC<SkemaProps> = ({
   // Handle single click to clear DOM selections
   useEffect(() => {
     if (!isActive) return;
-    
+
     const handlePointerDown = (e: PointerEvent) => {
       // Only handle left clicks
       if (e.button !== 0) return;
-      
+
       // Check if clicking on tldraw canvas (not on UI elements)
       const target = e.target as HTMLElement;
       if (!target.closest('.tl-canvas')) return;
-      
+
       // Clear DOM selections when clicking on empty canvas
       // Use a small delay to allow brush selection to start first
       setTimeout(() => {
         if (!editorRef.current) return;
-        
+
         // If no brush is active and no shapes are selected, clear DOM selections
         const instance = editorRef.current.getInstanceState();
         const hasShapesSelected = editorRef.current.getSelectedShapeIds().length > 0;
-        
+
         if (!instance.brush && !hasShapesSelected) {
           setDomSelections([]);
           setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
         }
       }, 150);
     };
-    
+
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, [isActive]);
@@ -648,9 +665,9 @@ export const Skema: React.FC<SkemaProps> = ({
           zIndex: zIndex + 1,
         }}
       >
-        Press <kbd style={{ 
-          backgroundColor: 'rgba(255,255,255,0.2)', 
-          padding: '2px 6px', 
+        Press <kbd style={{
+          backgroundColor: 'rgba(255,255,255,0.2)',
+          padding: '2px 6px',
           borderRadius: '3px',
           marginLeft: '4px',
           marginRight: '4px',
