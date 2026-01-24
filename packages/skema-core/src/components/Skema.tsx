@@ -15,11 +15,13 @@ import {
   useEditor,
   Editor,
   TLUiActionsContextType,
+  TLShapeId,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 import { DOMPickerTool } from '../tools/DOMPickerTool';
-import type { Annotation, DOMSelection, SkemaProps } from '../types';
-import { getViewportInfo } from '../utils/coordinates';
+import type { Annotation, DOMSelection, SkemaProps, BoundingBox } from '../types';
+import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
+import { createDOMSelection, shouldIgnoreElement } from '../utils/element-identification';
 
 // Custom toolbar with DOM picker
 const SkemaToolbar: React.FC = (props) => {
@@ -233,6 +235,62 @@ export const Skema: React.FC<SkemaProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Track scroll position to sync tldraw camera with page
+  const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
+  
+  // Sync scroll position with tldraw camera
+  useEffect(() => {
+    if (!isActive) return;
+
+    const syncScroll = () => {
+      const newOffset = { x: window.scrollX, y: window.scrollY };
+      setScrollOffset(newOffset);
+      
+      // Update tldraw camera to match scroll position
+      if (editorRef.current) {
+        editorRef.current.setCamera({ x: -newOffset.x, y: -newOffset.y, z: 1 });
+      }
+    };
+
+    // Initial sync
+    syncScroll();
+
+    // Listen for scroll events
+    window.addEventListener('scroll', syncScroll, { passive: true });
+    
+    return () => {
+      window.removeEventListener('scroll', syncScroll);
+    };
+  }, [isActive]);
+
+  // Intercept wheel events and scroll the page instead of panning tldraw
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Check if the event target is within tldraw's canvas area
+      const target = e.target as HTMLElement;
+      if (target.closest('.tl-container') || target.closest('[data-skema="container"]')) {
+        // Stop tldraw from handling it
+        e.stopPropagation();
+        
+        // Manually scroll the page
+        window.scrollBy({
+          top: e.deltaY,
+          left: e.deltaX,
+          behavior: 'auto',
+        });
+      }
+    };
+
+    // Capture phase to intercept before tldraw
+    document.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+    
+    return () => {
+      document.removeEventListener('wheel', handleWheel, { capture: true });
+    };
+  }, [isActive]);
+
   // Notify parent of annotation changes
   useEffect(() => {
     onAnnotationsChange?.(annotations);
@@ -276,16 +334,123 @@ export const Skema: React.FC<SkemaProps> = ({
     alert('Annotations copied to clipboard!');
   }, [annotations]);
 
+  // Find DOM elements that intersect with a bounding box
+  const findDOMElementsInBounds = useCallback((bounds: BoundingBox): HTMLElement[] => {
+    const elements: HTMLElement[] = [];
+    const allElements = document.querySelectorAll('*');
+    
+    allElements.forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (shouldIgnoreElement(el)) return;
+      
+      const rect = el.getBoundingClientRect();
+      const elBounds: BoundingBox = {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+      
+      // Skip tiny elements
+      if (elBounds.width < 10 || elBounds.height < 10) return;
+      
+      if (bboxIntersects(bounds, elBounds)) {
+        // Check if this element is not a parent of already added elements
+        const isParent = elements.some((existing) => el.contains(existing));
+        if (!isParent) {
+          // Remove any children of this element that were already added
+          const filtered = elements.filter((existing) => !existing.contains(el) && !el.contains(existing));
+          filtered.push(el);
+          elements.length = 0;
+          elements.push(...filtered);
+        }
+      }
+    });
+    
+    return elements;
+  }, []);
+
+  // Handle selection changes from tldraw
+  const handleSelectionChange = useCallback((selectedIds: TLShapeId[]) => {
+    if (!editorRef.current || selectedIds.length === 0) return;
+    
+    const editor = editorRef.current;
+    const selectedShapes = selectedIds.map((id) => editor.getShape(id)).filter(Boolean);
+    
+    if (selectedShapes.length === 0) return;
+    
+    // Get the combined bounds of all selected shapes
+    const selectionBounds = editor.getSelectionPageBounds();
+    if (!selectionBounds) return;
+    
+    // Tldraw shapes are now in document coordinates (camera synced with scroll)
+    // Convert to viewport coordinates for DOM element matching
+    const viewportBounds: BoundingBox = {
+      x: selectionBounds.x - window.scrollX,
+      y: selectionBounds.y - window.scrollY,
+      width: selectionBounds.width,
+      height: selectionBounds.height,
+    };
+    
+    // Find DOM elements in bounds
+    const foundElements = findDOMElementsInBounds(viewportBounds);
+    
+    // Create selections for found elements (avoid duplicates)
+    foundElements.forEach((el) => {
+      const selector = el.tagName.toLowerCase() + 
+        (el.id ? `#${el.id}` : '') + 
+        (el.className && typeof el.className === 'string' ? `.${el.className.split(' ')[0]}` : '');
+      
+      // Check if already selected
+      const alreadySelected = domSelections.some(
+        (s) => s.selector === selector || 
+               (Math.abs(s.boundingBox.x - el.getBoundingClientRect().left) < 5 &&
+                Math.abs(s.boundingBox.y - el.getBoundingClientRect().top) < 5)
+      );
+      
+      if (!alreadySelected) {
+        const selection = createDOMSelection(el);
+        handleDOMSelect(selection);
+      }
+    });
+  }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
+
   // Editor mount handler
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
+
+    // Set initial camera to match current scroll position
+    editor.setCamera({ x: -window.scrollX, y: -window.scrollY, z: 1 });
+    
+    // Prevent zoom changes (only allow position changes for scroll sync)
+    editor.sideEffects.registerAfterChangeHandler('camera', () => {
+      const camera = editor.getCamera();
+      // Only reset if zoom changed, allow position changes for scroll sync
+      if (camera.z !== 1) {
+        editor.setCamera({ x: camera.x, y: camera.y, z: 1 });
+      }
+    });
 
     // Get the DOM picker tool instance and set callback
     const domPickerTool = editor.root.children?.['dom-picker'] as DOMPickerTool | undefined;
     if (domPickerTool && 'setOnSelect' in domPickerTool) {
       domPickerTool.setOnSelect(handleDOMSelect);
     }
-  }, [handleDOMSelect]);
+    
+    // Listen for selection changes using sideEffects
+    editor.sideEffects.registerAfterChangeHandler('instance_page_state', (prev, next) => {
+      if (prev.selectedShapeIds !== next.selectedShapeIds) {
+        const selectedIds = next.selectedShapeIds;
+        if (selectedIds.length > 0) {
+          // Debounce to avoid too many calls
+          setTimeout(() => {
+            handleSelectionChange([...selectedIds] as TLShapeId[]);
+          }, 100);
+        }
+      }
+      return;
+    });
+  }, [handleDOMSelect, handleSelectionChange]);
 
   // Custom components
   const components: TLComponents = {
@@ -346,6 +511,10 @@ export const Skema: React.FC<SkemaProps> = ({
           onMount={handleMount}
           hideUi={false}
           inferDarkMode={false}
+          options={{
+            // Disable camera constraints that would interfere with overlay mode
+            maxPages: 1,
+          }}
         />
       </div>
 
