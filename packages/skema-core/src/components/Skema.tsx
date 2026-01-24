@@ -488,6 +488,7 @@ export const Skema: React.FC<SkemaProps> = ({
   const popupRef = useRef<AnnotationPopupHandle>(null);
   const lastDoubleClickRef = useRef<number>(0);
   const justFinishedDrawingRef = useRef<boolean>(false);
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   // Handle keyboard shortcut to toggle
   useEffect(() => {
@@ -1096,70 +1097,61 @@ export const Skema: React.FC<SkemaProps> = ({
     });
 
     // Track when drawing is complete to show annotation popup
-    let drawingCompleteTimeout: ReturnType<typeof setTimeout> | null = null;
-    let previousToolId: string | null = null;
+    let isMouseDown = false;
+    let pendingDrawingIds: TLShapeId[] | null = null;
 
-    // Listen for tool changes to detect when drawing finishes
-    editor.sideEffects.registerAfterChangeHandler('instance', (prev, next) => {
-      const currentToolId = editor.getCurrentToolId();
-      
-      // Detect when switching from a drawing tool to select
-      if (previousToolId && ['draw', 'line', 'arrow', 'geo'].includes(previousToolId) && currentToolId === 'select') {
-        justFinishedDrawingRef.current = true;
-        // Small delay to let the shape get selected
+    // Track mouse state to only show popup after mouse release
+    const handleMouseDown = () => {
+      isMouseDown = true;
+    };
+    
+    const handleMouseUp = () => {
+      isMouseDown = false;
+      // If we have pending drawing IDs, show the popup now
+      if (pendingDrawingIds && pendingDrawingIds.length > 0) {
+        const ids = pendingDrawingIds;
+        pendingDrawingIds = null;
+        // Small delay to ensure everything is settled
         setTimeout(() => {
-          const selectedIds = editor.getSelectedShapeIds();
-          if (selectedIds.length > 0) {
-            handleDrawingAnnotation([...selectedIds] as TLShapeId[]);
-          }
-          justFinishedDrawingRef.current = false;
-        }, 100);
+          handleDrawingAnnotation(ids);
+        }, 50);
       }
-      
-      previousToolId = currentToolId;
-      return;
-    });
+    };
 
-    // Also listen for selection changes (for when user selects existing drawings)
-    editor.sideEffects.registerAfterChangeHandler('instance_page_state', (prev, next) => {
-      if (prev.selectedShapeIds !== next.selectedShapeIds) {
-        const selectedIds = next.selectedShapeIds;
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mouseup', handleMouseUp);
 
-        // Clear any pending timeout
-        if (drawingCompleteTimeout) {
-          clearTimeout(drawingCompleteTimeout);
-          drawingCompleteTimeout = null;
-        }
-
-        // Skip if we just finished drawing (handled above)
-        if (justFinishedDrawingRef.current) {
-          return;
-        }
-
-        if (selectedIds.length > 0) {
-          // Debounce to ensure selection is stable
-          drawingCompleteTimeout = setTimeout(() => {
-            // Only trigger if we're in select mode
-            const currentTool = editor.getCurrentToolId();
-            if (currentTool !== 'select') {
-              return;
-            }
-
-            // Check if selected shapes are drawings
-            const shapes = selectedIds.map(id => editor.getShape(id)).filter(Boolean);
-            const hasDrawings = shapes.some(shape =>
-              shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
-            );
-
-            if (hasDrawings) {
-              handleDrawingAnnotation([...selectedIds] as TLShapeId[]);
-            }
-          }, 500); // Wait 500ms for manual selection
+    // Listen for new shape creation to detect when drawing finishes
+    editor.sideEffects.registerAfterCreateHandler('shape', (shape) => {
+      // Check if this is a drawing shape
+      if (['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)) {
+        // Queue this shape for annotation popup on mouse release
+        if (isMouseDown) {
+          pendingDrawingIds = [shape.id];
+        } else {
+          // Mouse already released (rare case), show popup immediately
+          setTimeout(() => {
+            handleDrawingAnnotation([shape.id]);
+          }, 100);
         }
       }
-      return;
     });
+
+    // Store cleanup function in ref for component unmount
+    cleanupRef.current = () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
+    };
+  }, []);
 
   // Handle single click to clear DOM selections or shake popup
   useEffect(() => {
