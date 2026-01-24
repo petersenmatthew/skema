@@ -571,6 +571,9 @@ export const Skema: React.FC<SkemaProps> = ({
       // Only handle left clicks
       if (e.button !== 0) return;
 
+      // If shift key is pressed, don't clear selections (preserve multi-select intent)
+      if (e.shiftKey) return;
+
       // Check if clicking on tldraw canvas (not on UI elements)
       const target = e.target as HTMLElement;
       if (!target.closest('.tl-canvas')) return;
