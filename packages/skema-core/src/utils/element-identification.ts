@@ -169,13 +169,13 @@ export function identifyElement(target: HTMLElement): string {
 }
 
 /**
- * Gets bounding box for an element relative to viewport
+ * Gets bounding box for an element in document coordinates (includes scroll offset)
  */
 export function getBoundingBox(element: HTMLElement): BoundingBox {
   const rect = element.getBoundingClientRect();
   return {
-    x: rect.left,
-    y: rect.top,
+    x: rect.left + window.scrollX,
+    y: rect.top + window.scrollY,
     width: rect.width,
     height: rect.height,
   };

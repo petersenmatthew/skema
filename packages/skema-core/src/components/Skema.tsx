@@ -40,42 +40,63 @@ const SkemaToolbar: React.FC = (props) => {
 };
 
 // Selection highlight overlay component
+// Selections are stored in document coordinates and rendered relative to page content
 const SelectionOverlay: React.FC<{ selections: DOMSelection[] }> = ({ selections }) => {
+  // Track scroll position to trigger re-renders
+  const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
+  
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrollPos({ x: window.scrollX, y: window.scrollY });
+    };
+    // Initial position
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
   return (
     <>
-      {selections.map((selection) => (
-        <div
-          key={selection.id}
-          data-skema="selection"
-          style={{
-            position: 'fixed',
-            left: selection.boundingBox.x,
-            top: selection.boundingBox.y,
-            width: selection.boundingBox.width,
-            height: selection.boundingBox.height,
-            border: '2px solid #10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            pointerEvents: 'none',
-            zIndex: 999997,
-          }}
-        >
-          <span
+      {selections.map((selection) => {
+        // boundingBox is stored in document coordinates
+        // Convert to viewport coordinates by subtracting current scroll
+        const viewportX = selection.boundingBox.x - scrollPos.x;
+        const viewportY = selection.boundingBox.y - scrollPos.y;
+
+        return (
+          <div
+            key={selection.id}
+            data-skema="selection"
             style={{
-              position: 'absolute',
-              top: -20,
-              left: 0,
-              backgroundColor: '#10b981',
-              color: 'white',
-              padding: '2px 6px',
-              fontSize: '11px',
-              borderRadius: '3px',
-              whiteSpace: 'nowrap',
+              position: 'fixed',
+              left: viewportX,
+              top: viewportY,
+              width: selection.boundingBox.width,
+              height: selection.boundingBox.height,
+              border: '2px solid #10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              pointerEvents: 'none',
+              zIndex: 999997,
             }}
           >
-            {selection.tagName}
-          </span>
-        </div>
-      ))}
+            <span
+              style={{
+                position: 'absolute',
+                top: -20,
+                left: 0,
+                backgroundColor: '#10b981',
+                color: 'white',
+                padding: '2px 6px',
+                fontSize: '11px',
+                borderRadius: '3px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {selection.tagName}
+            </span>
+          </div>
+        );
+      })}
     </>
   );
 };
@@ -415,6 +436,35 @@ export const Skema: React.FC<SkemaProps> = ({
     });
   }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
 
+  // Handle brush/drag selection to select DOM elements
+  const handleBrushSelection = useCallback((brushBounds: BoundingBox) => {
+    // Convert brush bounds (in document coordinates due to camera sync) to viewport coordinates
+    const viewportBounds: BoundingBox = {
+      x: brushBounds.x - window.scrollX,
+      y: brushBounds.y - window.scrollY,
+      width: brushBounds.width,
+      height: brushBounds.height,
+    };
+    
+    // Find DOM elements in bounds
+    const foundElements = findDOMElementsInBounds(viewportBounds);
+    
+    // Create selections for found elements (avoid duplicates)
+    foundElements.forEach((el) => {
+      const rect = el.getBoundingClientRect();
+      // Check if already selected by comparing position
+      const alreadySelected = domSelections.some(
+        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
+               Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+      );
+      
+      if (!alreadySelected) {
+        const selection = createDOMSelection(el);
+        handleDOMSelect(selection);
+      }
+    });
+  }, [findDOMElementsInBounds, domSelections, handleDOMSelect]);
+
   // Editor mount handler
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
@@ -437,6 +487,28 @@ export const Skema: React.FC<SkemaProps> = ({
       domPickerTool.setOnSelect(handleDOMSelect);
     }
     
+    // Track brush selection for drag-selecting DOM elements
+    let lastBrush: { x: number; y: number; w: number; h: number } | null = null;
+    
+    editor.sideEffects.registerAfterChangeHandler('instance', (prev, next) => {
+      // Check if brush selection just ended
+      if (prev.brush && !next.brush && lastBrush) {
+        // Brush selection completed - find DOM elements in the brush area
+        const brushBounds: BoundingBox = {
+          x: lastBrush.x,
+          y: lastBrush.y,
+          width: lastBrush.w,
+          height: lastBrush.h,
+        };
+        handleBrushSelection(brushBounds);
+        lastBrush = null;
+      } else if (next.brush) {
+        // Store the current brush bounds
+        lastBrush = next.brush;
+      }
+      return;
+    });
+    
     // Listen for selection changes using sideEffects
     editor.sideEffects.registerAfterChangeHandler('instance_page_state', (prev, next) => {
       if (prev.selectedShapeIds !== next.selectedShapeIds) {
@@ -450,7 +522,7 @@ export const Skema: React.FC<SkemaProps> = ({
       }
       return;
     });
-  }, [handleDOMSelect, handleSelectionChange]);
+  }, [handleDOMSelect, handleSelectionChange, handleBrushSelection]);
 
   // Custom components
   const components: TLComponents = {
