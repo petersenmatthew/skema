@@ -290,6 +290,8 @@ export const Skema: React.FC<SkemaProps> = ({
   // Custom components
   const components: TLComponents = {
     Toolbar: SkemaToolbar,
+    // Hide background to make canvas transparent (so website shows through)
+    Background: null,
     // Hide some UI elements we don't need
     SharePanel: null,
     MenuPanel: null,
