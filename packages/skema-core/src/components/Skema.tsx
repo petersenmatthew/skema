@@ -285,7 +285,36 @@ export const Skema: React.FC<SkemaProps> = ({
     if (domPickerTool && 'setOnSelect' in domPickerTool) {
       domPickerTool.setOnSelect(handleDOMSelect);
     }
+
+    // Sync camera with current scroll position
+    const syncCameraWithScroll = () => {
+      editor.setCamera({
+        x: -window.scrollX,
+        y: -window.scrollY,
+        z: 1,
+      }, { animation: { duration: 0 } });
+    };
+
+    // Initial sync
+    syncCameraWithScroll();
+
+    // Sync on scroll
+    window.addEventListener('scroll', syncCameraWithScroll);
+
+    // Store cleanup function
+    (editor as any).__skemaScrollCleanup = () => {
+      window.removeEventListener('scroll', syncCameraWithScroll);
+    };
   }, [handleDOMSelect]);
+
+  // Cleanup scroll listener when editor changes
+  useEffect(() => {
+    return () => {
+      if (editorRef.current && (editorRef.current as any).__skemaScrollCleanup) {
+        (editorRef.current as any).__skemaScrollCleanup();
+      }
+    };
+  }, []);
 
   // Custom components
   const components: TLComponents = {
@@ -337,6 +366,14 @@ export const Skema: React.FC<SkemaProps> = ({
           position: 'absolute',
           inset: 0,
           pointerEvents: 'auto',
+        }}
+        onWheelCapture={(e) => {
+          // Pass wheel events through to scroll the page instead of panning tldraw
+          e.stopPropagation();
+          window.scrollBy({
+            left: e.deltaX,
+            top: e.deltaY,
+          });
         }}
       >
         <Tldraw

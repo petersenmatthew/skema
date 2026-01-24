@@ -241,11 +241,17 @@ function getElementAttributes(element: HTMLElement): Record<string, string> | un
 export function shouldIgnoreElement(element: HTMLElement): boolean {
   // Ignore Skema's own elements
   if (element.closest('[data-skema]')) return true;
+
+  // Ignore tldraw elements (canvas, UI, overlays)
   if (element.closest('.tl-container')) return true;
-  
+  if (element.closest('.tl-canvas')) return true;
+  if (element.closest('.tl-ui')) return true;
+  if (element.classList.contains('tl-container')) return true;
+  if (element.classList.contains('tl-canvas')) return true;
+
   // Ignore script and style tags
   const tag = element.tagName.toLowerCase();
   if (['script', 'style', 'noscript', 'meta', 'link'].includes(tag)) return true;
-  
+
   return false;
 }
