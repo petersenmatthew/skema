@@ -524,6 +524,38 @@ export const Skema: React.FC<SkemaProps> = ({
     });
   }, [handleDOMSelect, handleSelectionChange, handleBrushSelection]);
 
+  // Handle single click to clear DOM selections
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const handlePointerDown = (e: PointerEvent) => {
+      // Only handle left clicks
+      if (e.button !== 0) return;
+      
+      // Check if clicking on tldraw canvas (not on UI elements)
+      const target = e.target as HTMLElement;
+      if (!target.closest('.tl-canvas')) return;
+      
+      // Clear DOM selections when clicking on empty canvas
+      // Use a small delay to allow brush selection to start first
+      setTimeout(() => {
+        if (!editorRef.current) return;
+        
+        // If no brush is active and no shapes are selected, clear DOM selections
+        const instance = editorRef.current.getInstanceState();
+        const hasShapesSelected = editorRef.current.getSelectedShapeIds().length > 0;
+        
+        if (!instance.brush && !hasShapesSelected) {
+          setDomSelections([]);
+          setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
+        }
+      }, 150);
+    };
+    
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isActive]);
+
   // Custom components
   const components: TLComponents = {
     Toolbar: SkemaToolbar,
