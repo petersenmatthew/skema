@@ -48,6 +48,7 @@ export type {
   Annotation,
   AnnotationExport,
   BoundingBox,
+  DOMElement,
   DOMSelection,
   DrawingAnnotation,
   GestureAnnotation,
@@ -55,5 +56,4 @@ export type {
   SkemaMode,
   SkemaProps,
   ViewportInfo,
-
 } from './types';

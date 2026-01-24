@@ -665,17 +665,40 @@ export const Skema: React.FC<SkemaProps> = ({
     if (!pendingAnnotation) return;
 
     if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
-      // Add all DOM selections with the comment
-      const newSelections = pendingAnnotation.selections.map(selection => ({
-        ...selection,
-        comment,
-      }));
-
-      setDomSelections((prev) => [...prev, ...newSelections]);
-      setAnnotations((prev) => [
-        ...prev,
-        ...newSelections.map(sel => ({ type: 'dom_selection' as const, ...sel })),
-      ]);
+      const selections = pendingAnnotation.selections;
+      
+      if (selections.length === 1) {
+        // Single element - create simple annotation
+        const selection = { ...selections[0], comment };
+        setDomSelections((prev) => [...prev, selection]);
+        setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...selection }]);
+      } else {
+        // Multiple elements - create a single grouped annotation
+        const groupedSelection: DOMSelection = {
+          id: `group-${Date.now()}`,
+          selector: selections.map(s => s.selector).join(', '),
+          tagName: pendingAnnotation.element, // Already formatted as "3 elements: div, span, p"
+          elementPath: selections[0].elementPath, // Use first element's path as reference
+          text: selections.map(s => s.text).filter(Boolean).join(' | ').slice(0, 200),
+          boundingBox: pendingAnnotation.boundingBox!,
+          timestamp: Date.now(),
+          pathname: selections[0].pathname,
+          comment,
+          isMultiSelect: true,
+          elements: selections.map(s => ({
+            selector: s.selector,
+            tagName: s.tagName,
+            elementPath: s.elementPath,
+            text: s.text,
+            boundingBox: s.boundingBox,
+            cssClasses: s.cssClasses,
+            attributes: s.attributes,
+          })),
+        };
+        
+        setDomSelections((prev) => [...prev, groupedSelection]);
+        setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...groupedSelection }]);
+      }
     } else if (pendingAnnotation.annotationType === 'drawing' && pendingAnnotation.shapeIds) {
       // Handle drawing annotation
       const drawingAnnotation: Annotation = {
@@ -1009,11 +1032,8 @@ export const Skema: React.FC<SkemaProps> = ({
           ) as HTMLElement | undefined;
 
           if (target) {
-            // If shift is not held, replace the selection (clear others first)
-            if (!info.shiftKey) {
-              setDomSelections([]);
-              setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
-            }
+            // NOTE: We no longer clear existing annotations on double-click.
+            // Annotations persist until explicitly deleted by the user.
 
             // Create selection and show popup
             const selection = createDOMSelection(target);
@@ -1058,13 +1078,8 @@ export const Skema: React.FC<SkemaProps> = ({
     // Get the lasso select tool instance and set callbacks
     const lassoSelectTool = editor.root.children?.['lasso-select'] as LassoSelectTool | undefined;
     if (lassoSelectTool) {
-      // Set clear selections callback (for single click)
-      if ('setOnClearSelections' in lassoSelectTool) {
-        lassoSelectTool.setOnClearSelections(() => {
-          setDomSelections([]);
-          setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
-        });
-      }
+      // NOTE: We no longer clear annotations on single click.
+      // Annotations persist until explicitly deleted by the user.
 
       // Set lasso complete callback (for selecting DOM elements)
       if ('setOnLassoComplete' in lassoSelectTool) {
@@ -1180,22 +1195,9 @@ export const Skema: React.FC<SkemaProps> = ({
       // Check if clicking on tldraw canvas (not on UI elements)
       if (!target.closest('.tl-canvas')) return;
 
-      // Clear DOM selections when clicking on empty canvas
-      // Use a small delay to allow brush selection to start first
-      setTimeout(() => {
-        if (!editorRef.current) return;
-
-        // If no brush is active and no shapes are selected, clear DOM selections
-        // Also check if we just double clicked (within last 300ms) - if so, don't clear
-        const instance = editorRef.current.getInstanceState();
-        const hasShapesSelected = editorRef.current.getSelectedShapeIds().length > 0;
-        const isRecentDoubleClick = Date.now() - lastDoubleClickRef.current < 300;
-
-        if (!instance.brush && !hasShapesSelected && !isRecentDoubleClick) {
-          setDomSelections([]);
-          setAnnotations((prev) => prev.filter((a) => a.type !== 'dom_selection'));
-        }
-      }, 150);
+      // NOTE: We intentionally do NOT clear annotations on click.
+      // Annotations persist until explicitly deleted by the user (via marker click).
+      // This ensures that once a user submits an annotation, it stays visible.
     };
 
     document.addEventListener('pointerdown', handlePointerDown, { capture: true });

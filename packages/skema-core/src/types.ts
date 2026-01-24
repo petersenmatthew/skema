@@ -3,7 +3,20 @@
 // =============================================================================
 
 /**
- * Represents a DOM element selection
+ * Represents a single DOM element in a selection
+ */
+export interface DOMElement {
+  selector: string;
+  tagName: string;
+  elementPath: string;
+  text: string;
+  boundingBox: BoundingBox;
+  cssClasses?: string;
+  attributes?: Record<string, string>;
+}
+
+/**
+ * Represents a DOM element selection (can contain one or more elements)
  */
 export interface DOMSelection {
   id: string;
@@ -20,6 +33,8 @@ export interface DOMSelection {
   comment?: string;
   /** Whether this is a multi-element selection */
   isMultiSelect?: boolean;
+  /** Individual elements when this is a grouped selection */
+  elements?: DOMElement[];
 }
 
 /**
