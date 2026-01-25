@@ -7,16 +7,12 @@ import {
   Tldraw,
   TLComponents,
   TLUiOverrides,
-  DefaultToolbar,
-  DefaultToolbarContent,
-  TldrawUiMenuItem,
   TldrawOverlays,
   useTools,
   useIsToolSelected,
   useEditor,
   useValue,
   Editor,
-  TLUiActionsContextType,
   TLShapeId,
   StateNode,
   TLClickEventInfo,
@@ -198,21 +194,208 @@ const AnnotationMarkersLayer: React.FC<{
   );
 };
 
-// Custom toolbar with DOM picker and lasso select
-const SkemaToolbar: React.FC = (props) => {
-  const tools = useTools();
+// =============================================================================
+// Custom Icon Components for Toolbar
+// =============================================================================
 
-  const isLassoSelected = useIsToolSelected(tools['lasso-select']);
+const SelectIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
+  <svg width="35" height="35" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Red/Orange triangle background */}
+    <path 
+      d="M11.268 3C12.0378 1.6667 13.9623 1.6667 14.7321 3L25.1244 21C25.8942 22.3333 24.9319 24 23.3923 24H2.6077C1.0681 24 0.1058 22.3333 0.8756 21L11.268 3Z" 
+      fill="#F24E1E"
+      opacity={isSelected ? 1 : 0.7}
+    />
+    {/* Cursor/pointer icon */}
+    <path 
+      d="M9 10L9 18.5L11.5 16L14 20L15.5 19L13 15L16 14.5L9 10Z" 
+      fill="#3C3C3C"
+    />
+  </svg>
+);
+
+const DrawIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
+  <svg width="35" height="35" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="25" height="25" rx="2" fill={isSelected ? '#00C851' : '#00C851'} opacity={isSelected ? 1 : 0.7} />
+    <path 
+      fillRule="evenodd" 
+      clipRule="evenodd" 
+      d="M13.6919 10.2852L14.2593 9.6908L14.8282 10.2864L14.2605 10.8808L13.6919 10.2852ZM9.5682 15.7944L8.9992 15.1988L13.1233 10.8808L13.6919 11.476L9.5682 15.7944ZM14.3284 8.5L8 15.1988V16.5H9.5682L16 10.0436L14.3284 8.5Z" 
+      fill="#3C3C3C"
+    />
+  </svg>
+);
+
+const LassoIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
+  <svg width="35" height="35" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="25" height="25" rx="12.5" fill={isSelected ? '#2C7FFF' : '#2C7FFF'} opacity={isSelected ? 1 : 0.7} />
+    <path 
+      fillRule="evenodd" 
+      clipRule="evenodd" 
+      d="M9.219 11.3C9.219 10.8021 9.504 10.3117 10.043 9.9297C10.582 9.5484 11.347 9.3 12.211 9.3C13.074 9.3 13.839 9.5484 14.378 9.9297C14.918 10.3117 15.202 10.8021 15.202 11.3C15.202 11.7979 14.918 12.2882 14.378 12.6702C13.839 13.0515 13.074 13.2999 12.211 13.2999C12.005 13.2999 11.805 13.2859 11.612 13.2591C11.586 12.5417 10.887 12.0999 10.216 12.0999C9.988 12.0999 9.768 12.147 9.572 12.234C9.339 11.9444 9.219 11.625 9.219 11.3ZM12.211 14.0999C11.908 14.0999 11.614 14.074 11.331 14.0249C11.298 14.0629 11.262 14.0988 11.224 14.1325C11.226 14.154 11.228 14.1774 11.229 14.2026C11.232 14.3182 11.216 14.4769 11.137 14.6456C10.97 15.0066 10.586 15.2824 9.919 15.3874C9.091 15.5175 8.878 15.7607 8.827 15.8497C8.8 15.8961 8.797 15.9328 8.798 15.9542C8.798 15.9629 8.799 15.9695 8.8 15.973C8.805 15.9901 8.81 16.0079 8.813 16.026C8.833 16.1321 8.809 16.2395 8.751 16.3254C8.718 16.3733 8.675 16.4145 8.623 16.445C8.584 16.4681 8.54 16.4847 8.494 16.4932C8.447 16.502 8.4 16.5021 8.355 16.4944C8.296 16.4846 8.242 16.4619 8.195 16.4294C8.148 16.3972 8.108 16.3549 8.078 16.304C8.063 16.278 8.05 16.2501 8.041 16.2208C8.04 16.217 8.038 16.2128 8.037 16.2083C8.032 16.1931 8.027 16.1741 8.022 16.1517C8.012 16.1071 8.002 16.0477 8 15.977C7.996 15.8338 8.023 15.6452 8.136 15.4492C8.365 15.0533 8.87 14.7426 9.795 14.5971C9.958 14.5714 10.079 14.5362 10.167 14.4992C9.499 14.478 8.82 14.0237 8.82 13.2999C8.82 13.0999 8.876 12.9166 8.969 12.758C8.629 12.344 8.421 11.8466 8.421 11.3C8.421 10.4724 8.896 9.7627 9.583 9.2761C10.272 8.7888 11.202 8.5 12.211 8.5C13.219 8.5 14.15 8.7888 14.838 9.2761C15.526 9.7627 16 10.4724 16 11.3C16 12.1275 15.526 12.8372 14.838 13.3238C14.15 13.8111 13.219 14.0999 12.211 14.0999ZM9.754 13.0514C9.859 12.9649 10.021 12.8999 10.216 12.8999C10.634 12.8999 10.815 13.1577 10.815 13.2999C10.815 13.3371 10.806 13.3739 10.789 13.4108C10.757 13.4794 10.69 13.5552 10.58 13.6136C10.482 13.666 10.357 13.6999 10.216 13.6999C9.798 13.6999 9.618 13.4422 9.618 13.2999C9.618 13.2236 9.655 13.1338 9.754 13.0514Z" 
+      fill="#2C2C2C"
+    />
+  </svg>
+);
+
+const EraseIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
+  <svg width="42" height="35" viewBox="0 0 30 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Yellow parallelogram background */}
+    <path 
+      d="M0.308 1.2407C0.151 0.61 0.628 0 1.278 0H23.664C24.118 0 24.516 0.3065 24.631 0.746L30.671 23.746C30.837 24.38 30.359 25 29.704 25H6.982C6.523 25 6.122 24.6868 6.012 24.2407L0.308 1.2407Z" 
+      fill="#FFBA00"
+      opacity={isSelected ? 1 : 0.7}
+    />
+    {/* Eraser icon - proper diagonal orientation (down-left to up-right) */}
+    <g transform="translate(15, 12.5)">
+      <g transform="rotate(-45)">
+        <rect x="-6" y="-3" width="12" height="6" rx="1" fill="none" stroke="#3C3C3C" strokeWidth="1.5"/>
+        <line x1="-2" y1="-3" x2="-2" y2="3" stroke="#3C3C3C" strokeWidth="1.5"/>
+      </g>
+    </g>
+  </svg>
+);
+
+const StarIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
+  <svg width="35" height="35" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+    {/* Orange star */}
+    <path 
+      d="M12.253 0.8403C12.65 0.393 13.35 0.393 13.747 0.8403L16.628 4.0796C16.805 4.2791 17.055 4.3993 17.321 4.4136L21.65 4.6461C22.248 4.6782 22.684 5.2247 22.582 5.8146L21.845 10.0863C21.8 10.3493 21.862 10.6196 22.017 10.8369L24.534 14.366C24.881 14.8533 24.726 15.5348 24.201 15.8231L20.402 17.9105C20.168 18.0391 19.995 18.2558 19.922 18.5125L18.732 22.6808C18.568 23.2564 17.938 23.5596 17.386 23.3292L13.385 21.6606C13.139 21.5578 12.861 21.5578 12.615 21.6606L8.614 23.3292C8.062 23.5596 7.432 23.2564 7.268 22.6808L6.078 18.5125C6.005 18.2558 5.832 18.0391 5.598 17.9105L1.799 15.8231C1.274 15.5348 1.119 14.8533 1.466 14.366L3.983 10.8369C4.138 10.6196 4.2 10.3493 4.155 10.0863L3.418 5.8146C3.316 5.2247 3.752 4.6782 4.35 4.6461L8.679 4.4136C8.945 4.3993 9.195 4.2791 9.372 4.0796L12.253 0.8403Z" 
+      fill="#FF6800"
+      opacity={isSelected ? 1 : 0.7}
+    />
+    {/* Git icon (white) */}
+    <g transform="translate(6.5, 6) scale(0.5)">
+      <path 
+        d="M23.546 10.93L13.067 0.452c-0.604-0.603-1.582-0.603-2.188 0L8.708 2.627l2.76 2.76c0.645-0.215 1.379-0.07 1.889 0.441 0.516 0.516 0.658 1.258 0.438 1.9l2.658 2.66c0.645-0.223 1.387-0.078 1.9 0.435 0.721 0.72 0.721 1.884 0 2.604-0.719 0.719-1.881 0.719-2.6 0-0.539-0.541-0.674-1.337-0.404-1.996L12.86 8.955v6.525c0.176 0.086 0.342 0.203 0.488 0.348 0.713 0.721 0.713 1.883 0 2.6-0.719 0.721-1.889 0.721-2.609 0-0.719-0.719-0.719-1.879 0-2.598 0.182-0.18 0.387-0.316 0.605-0.406V8.835c-0.217-0.091-0.424-0.222-0.6-0.401-0.545-0.545-0.676-1.342-0.396-2.009L7.636 3.7 0.45 10.881c-0.6 0.605-0.6 1.584 0 2.189l10.48 10.477c0.604 0.604 1.582 0.604 2.186 0l10.43-10.43c0.605-0.603 0.605-1.582 0-2.187"
+        fill="white"
+      />
+    </g>
+  </svg>
+);
+
+// =============================================================================
+// Custom Toolbar Button Component
+// =============================================================================
+
+interface ToolbarButtonProps {
+  onClick: () => void;
+  isSelected: boolean;
+  icon: React.ReactNode;
+  label: string;
+}
+
+const ToolbarButton: React.FC<ToolbarButtonProps> = ({ onClick, isSelected, icon, label }) => {
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClick();
+  };
 
   return (
-    <DefaultToolbar {...props}>
+    <button
+      onClick={handleClick}
+      title={label}
+      type="button"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 56,
+        height: 56,
+        border: 'none',
+        borderRadius: 11,
+        backgroundColor: isSelected ? 'rgba(255,255,255,0.15)' : 'transparent',
+        cursor: 'pointer',
+        transition: 'background-color 0.15s ease',
+        pointerEvents: 'auto',
+      }}
+    >
+      {icon}
+    </button>
+  );
+};
 
-      <TldrawUiMenuItem
-        {...tools['lasso-select']}
-        isSelected={isLassoSelected}
+// =============================================================================
+// Custom Skema Toolbar
+// =============================================================================
+
+const SkemaToolbar: React.FC = () => {
+  const editor = useEditor();
+  const tools = useTools();
+  
+  const isSelectSelected = useIsToolSelected(tools['select']);
+  const isDrawSelected = useIsToolSelected(tools['draw']);
+  const isLassoSelected = useIsToolSelected(tools['lasso-select']);
+  const isEraseSelected = useIsToolSelected(tools['eraser']);
+
+  // Placeholder state (not connected to any tool)
+  const [isStarSelected] = useState(false);
+
+  return (
+    <div
+      data-skema="toolbar"
+      style={{
+        position: 'absolute',
+        bottom: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 11,
+        padding: '11px 17px',
+        backgroundColor: 'white',
+        borderRadius: 36,
+        boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+        pointerEvents: 'auto',
+        zIndex: 99999,
+      }}
+    >
+      <ToolbarButton
+        onClick={() => editor.setCurrentTool('select')}
+        isSelected={isSelectSelected}
+        icon={<SelectIcon isSelected={isSelectSelected} />}
+        label="Select (V)"
       />
-      <DefaultToolbarContent />
-    </DefaultToolbar>
+      <ToolbarButton
+        onClick={() => editor.setCurrentTool('lasso-select')}
+        isSelected={isLassoSelected}
+        icon={<LassoIcon isSelected={isLassoSelected} />}
+        label="Lasso Select (L)"
+      />
+      <ToolbarButton
+        onClick={() => editor.setCurrentTool('draw')}
+        isSelected={isDrawSelected}
+        icon={<DrawIcon isSelected={isDrawSelected} />}
+        label="Draw (D)"
+      />
+      <ToolbarButton
+        onClick={() => editor.setCurrentTool('eraser')}
+        isSelected={isEraseSelected}
+        icon={<EraseIcon isSelected={isEraseSelected} />}
+        label="Eraser (E)"
+      />
+      {/* Separator */}
+      <div
+        style={{
+          width: 3,
+          height: 36,
+          backgroundColor: '#C4C2C2',
+          borderRadius: 1.5,
+          margin: '0 6px',
+        }}
+      />
+      {/* Placeholder button - to be implemented later */}
+      <ToolbarButton
+        onClick={() => {
+          // Placeholder - no action yet
+          console.log('Star button clicked - placeholder for future feature');
+        }}
+        isSelected={isStarSelected}
+        icon={<StarIcon isSelected={isStarSelected} />}
+        label="Special (Coming Soon)"
+      />
+    </div>
   );
 };
 
