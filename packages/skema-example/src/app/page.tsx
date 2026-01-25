@@ -136,7 +136,7 @@ export default function Home() {
             Get Started
           </button>
           <button className="btn btn-secondary">
-            Learn More
+            
           </button>
         </div>
       </section>
