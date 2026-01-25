@@ -23,7 +23,7 @@ export default function OverviewPage() {
               </Link>
               <a
                 href="https://github.com"
-                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium transition-colors hover:bg-muted"
+                className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-black transition-colors hover:bg-muted"
               >
                 GitHub
               </a>
