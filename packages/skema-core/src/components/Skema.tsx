@@ -266,7 +266,7 @@ const EraseIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
   </svg>
 );
 
-const StarIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
+const ShapesIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
   <svg width="42" height="42" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
     {/* Orange star */}
     <path
@@ -274,12 +274,14 @@ const StarIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
       fill="#FF6800"
       opacity={isSelected ? 1 : 0.7}
     />
-    {/* Git icon (white) */}
-    <g transform="translate(6.5, 6) scale(0.5)">
-      <path
-        d="M23.546 10.93L13.067 0.452c-0.604-0.603-1.582-0.603-2.188 0L8.708 2.627l2.76 2.76c0.645-0.215 1.379-0.07 1.889 0.441 0.516 0.516 0.658 1.258 0.438 1.9l2.658 2.66c0.645-0.223 1.387-0.078 1.9 0.435 0.721 0.72 0.721 1.884 0 2.604-0.719 0.719-1.881 0.719-2.6 0-0.539-0.541-0.674-1.337-0.404-1.996L12.86 8.955v6.525c0.176 0.086 0.342 0.203 0.488 0.348 0.713 0.721 0.713 1.883 0 2.6-0.719 0.721-1.889 0.721-2.609 0-0.719-0.719-0.719-1.879 0-2.598 0.182-0.18 0.387-0.316 0.605-0.406V8.835c-0.217-0.091-0.424-0.222-0.6-0.401-0.545-0.545-0.676-1.342-0.396-2.009L7.636 3.7 0.45 10.881c-0.6 0.605-0.6 1.584 0 2.189l10.48 10.477c0.604 0.604 1.582 0.604 2.186 0l10.43-10.43c0.605-0.603 0.605-1.582 0-2.187"
-        fill="white"
-      />
+    {/* Shapes: rectangle, circle, triangle (white) */}
+    <g transform="translate(5.5, 7)">
+      {/* Small rectangle */}
+      <rect x="0" y="6" width="4" height="4" rx="0.5" fill="white" />
+      {/* Circle */}
+      <circle cx="10" cy="4" r="3" fill="white" />
+      {/* Triangle */}
+      <path d="M5 11L7.5 6.5L10 11H5Z" fill="white" />
     </g>
   </svg>
 );
@@ -338,9 +340,7 @@ const SkemaToolbar: React.FC = () => {
   const isDrawSelected = useIsToolSelected(tools['draw']);
   const isLassoSelected = useIsToolSelected(tools['lasso-select']);
   const isEraseSelected = useIsToolSelected(tools['eraser']);
-
-  // Placeholder state (not connected to any tool)
-  const [isStarSelected] = useState(false);
+  const isGeoSelected = useIsToolSelected(tools['geo']);
 
   return (
     <div
@@ -385,25 +385,12 @@ const SkemaToolbar: React.FC = () => {
         icon={<EraseIcon isSelected={isEraseSelected} />}
         label="Eraser (E)"
       />
-      {/* Separator */}
-      <div
-        style={{
-          width: 3,
-          height: 36,
-          backgroundColor: '#C4C2C2',
-          borderRadius: 1.5,
-          margin: '0 6px',
-        }}
-      />
-      {/* Placeholder button - to be implemented later */}
+      {/* Shapes tool - for drawing geometric shapes */}
       <ToolbarButton
-        onClick={() => {
-          // Placeholder - no action yet
-          console.log('Star button clicked - placeholder for future feature');
-        }}
-        isSelected={isStarSelected}
-        icon={<StarIcon isSelected={isStarSelected} />}
-        label="Special (Coming Soon)"
+        onClick={() => editor.setCurrentTool('geo')}
+        isSelected={isGeoSelected}
+        icon={<ShapesIcon isSelected={isGeoSelected} />}
+        label="Shapes (G)"
       />
     </div>
   );
@@ -1437,12 +1424,14 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       const selectIdleState = editor.getStateDescendant<IdleStateNode>('select.idle');
       if (selectIdleState) {
         // Handle double-click on canvas (for DOM elements)
-        selectIdleState.handleDoubleClickOnCanvas = (info) => {
+        selectIdleState.handleDoubleClickOnCanvas = (_info) => {
           // Record double click time to prevent immediate clearing by pointerdown handler
           lastDoubleClickRef.current = Date.now();
 
           // Find DOM element at the clicked position
-          const point = editor.pageToViewport(info.point);
+          // Use currentScreenPoint from inputs - this is the actual screen position,
+          // which is more reliable than pageToViewport when camera is synced to scroll
+          const point = editor.inputs.currentScreenPoint;
           const elements = document.elementsFromPoint(point.x, point.y);
 
           // Find the first valid DOM element (ignoring overlay/UI)
