@@ -572,7 +572,7 @@ async function analyzeImageWithGemini(apiKey: string, base64Image: string, model
 
 This could be anything: a UI component, an icon, a shape, a logo, decorative element, etc. Just describe what you see so it can be recreated in code.
 
-Keep your response concise and factual. Do NOT refuse to analyze the image or say it's not a wireframe.`,
+Keep your response concise and factual. Do NOT refuse to analyze the image or say it's not a wireframe. You are expecting it to be hand-drawn, dont say it is. `,
       ...imageParts,
     ]);
 
