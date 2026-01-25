@@ -804,6 +804,11 @@ export const Skema: React.FC<SkemaProps> = ({
   const scribblePointsRef = useRef<GesturePoint[]>([]);
   const isDrawingRef = useRef<boolean>(false);
   const scribbleDetectedRef = useRef<boolean>(false);
+  
+  // Saved shapes for hide/restore when toggling Skema off/on
+  // Stores shape data when user presses Cmd+Shift+E to hide overlay
+  const savedShapesRef = useRef<Record<string, any> | null>(null);
+  const wasActiveRef = useRef<boolean>(isActive);
 
   // Handle keyboard shortcut to toggle
   useEffect(() => {
@@ -818,6 +823,71 @@ export const Skema: React.FC<SkemaProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // =============================================================================
+  // Hide/Restore Drawings When Toggling Skema Off/On
+  // =============================================================================
+  // When user presses Cmd+Shift+E to hide Skema, save all drawings to memory
+  // and remove them from canvas. When Skema is shown again, restore them.
+  
+  useEffect(() => {
+    const editor = editorRef.current;
+    
+    // Detect transition from active to inactive (hiding Skema)
+    if (wasActiveRef.current && !isActive && editor) {
+      // Get all drawing shapes on the canvas
+      const allShapes = editor.getCurrentPageShapes();
+      const drawingShapes = allShapes.filter(shape => 
+        ['draw', 'line', 'arrow', 'geo', 'text', 'note', 'frame'].includes(shape.type)
+      );
+      
+      if (drawingShapes.length > 0) {
+        // Save the current store snapshot (only shapes we care about)
+        const shapeRecords: Record<string, any> = {};
+        for (const shape of drawingShapes) {
+          shapeRecords[shape.id] = shape;
+        }
+        savedShapesRef.current = shapeRecords;
+        
+        // Delete the shapes from canvas (they're now hidden)
+        const shapeIds = drawingShapes.map(s => s.id);
+        editor.deleteShapes(shapeIds);
+        
+        console.log(`[Skema] Hiding: saved ${drawingShapes.length} shape(s) to memory`);
+      }
+    }
+    
+    // Update the ref for next comparison
+    wasActiveRef.current = isActive;
+  }, [isActive]);
+  
+  // Restore shapes when Skema becomes active again (after editor is mounted)
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const editor = editorRef.current;
+    if (!editor || !savedShapesRef.current) return;
+    
+    // Small delay to ensure editor is fully ready after mount
+    const timeoutId = setTimeout(() => {
+      const savedShapes = savedShapesRef.current;
+      if (!savedShapes || !editorRef.current) return;
+      
+      const editor = editorRef.current;
+      const shapesToRestore = Object.values(savedShapes);
+      
+      if (shapesToRestore.length > 0) {
+        // Restore shapes to the canvas
+        editor.createShapes(shapesToRestore);
+        console.log(`[Skema] Restoring: loaded ${shapesToRestore.length} shape(s) from memory`);
+        
+        // Clear saved shapes after restore
+        savedShapesRef.current = null;
+      }
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [isActive]);
 
   // Track scroll position to sync tldraw camera with page
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
