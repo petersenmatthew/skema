@@ -315,7 +315,8 @@ IMPORTANT RULES TO AVOID ERRORS:
 2. You do not need to update package.json or anything, just add / edit the react component.
 3. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
 4. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
-5. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports`;
+5. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports
+6. DONT MAKE ANY CHANGES THAT WOULD RESULT IN A Build Error`;
 
   return prompt;
 }
