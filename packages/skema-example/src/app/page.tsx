@@ -32,10 +32,10 @@ export default function OverviewPage() {
 
           {/* What is Skema */}
           <section className="mb-20">
-            <p className="leading-relaxed text-muted-foreground">
+            <p className="leading-relaxed text-lg text-muted-foreground">
               <ThemedLogo className="inline-block h-6 w-auto align-middle" /> is a React component library that provides a tldraw-powered drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
             </p>
-            <p className="mt-4 leading-relaxed text-muted-foreground">
+            <p className="mt-4 leading-relaxed text-lg text-muted-foreground">
               We made website development drawable. Scribble on your localhost like a whiteboard,
               point at what bothers you, and let AI do the actual coding part.
               Because explaining "the button should be 50% left" is way harder than just... moving it.
@@ -46,22 +46,26 @@ export default function OverviewPage() {
           <section className="mb-20">
             <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Key Concepts</h2>
             <div className="space-y-4">
-              <div className="flex justify-between border-b border-border pb-4">
+              <Link href="/features#drawing-overlay" className="flex justify-between border-b border-border pb-4 text-foreground no-underline transition-colors hover:opacity-70">
                 <span className="font-mono text-sm">Drawing Overlay</span>
                 <span className="text-sm text-muted-foreground">Transparent layer powered by tldraw</span>
-              </div>
-              <div className="flex justify-between border-b border-border pb-4">
-                <span className="font-mono text-sm">DOM Picker</span>
-                <span className="text-sm text-muted-foreground">Select and capture any element</span>
-              </div>
-              <div className="flex justify-between border-b border-border pb-4">
+              </Link>
+              <Link href="/features#lasso-select" className="flex justify-between border-b border-border pb-4 text-foreground no-underline transition-colors hover:opacity-70">
                 <span className="font-mono text-sm">Lasso Select</span>
                 <span className="text-sm text-muted-foreground">Freeform multi-element selection</span>
-              </div>
-              <div className="flex justify-between pb-4">
-                <span className="font-mono text-sm">Annotations</span>
-                <span className="text-sm text-muted-foreground">Structured data for export</span>
-              </div>
+              </Link>
+              <Link href="/features#context-capture" className="flex justify-between border-b border-border pb-4 text-foreground no-underline transition-colors hover:opacity-70">
+                <span className="font-mono text-sm">Context Capture</span>
+                <span className="text-sm text-muted-foreground">Screenshot + DOM analysis</span>
+              </Link>
+              <Link href="/features#ai-generation" className="flex justify-between border-b border-border pb-4 text-foreground no-underline transition-colors hover:opacity-70">
+                <span className="font-mono text-sm">AI Code Generation</span>
+                <span className="text-sm text-muted-foreground">Gemini CLI integration</span>
+              </Link>
+              <Link href="/features#instant-updates" className="flex justify-between pb-4 text-foreground no-underline transition-colors hover:opacity-70">
+                <span className="font-mono text-sm">Instant Updates</span>
+                <span className="text-sm text-muted-foreground">Zero-friction workflow</span>
+              </Link>
             </div>
           </section>
 
