@@ -222,6 +222,8 @@ export interface SkemaProps {
   initialAnnotations?: Annotation[];
   /** Z-index for the overlay (default: 99999) */
   zIndex?: number;
+  /** Whether an annotation is currently being processed (shows loading animation) */
+  isProcessing?: boolean;
 }
 
 /**

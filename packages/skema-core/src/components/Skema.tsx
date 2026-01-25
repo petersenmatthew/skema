@@ -515,6 +515,124 @@ const SelectionOverlay: React.FC<{ selections: DOMSelection[] }> = ({ selections
   );
 };
 
+// =============================================================================
+// Processing Loading Overlay - Shows animation when changes are being made
+// =============================================================================
+
+const ProcessingOverlay: React.FC<{
+  boundingBox: BoundingBox;
+  scrollOffset: { x: number; y: number };
+}> = ({ boundingBox, scrollOffset }) => {
+  // Convert to viewport coordinates
+  const viewportX = boundingBox.x - scrollOffset.x;
+  const viewportY = boundingBox.y - scrollOffset.y;
+
+  return (
+    <>
+      <style>{`
+        @keyframes skema-processing-pulse {
+          0%, 100% {
+            opacity: 0.4;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.7;
+            transform: scale(1.02);
+          }
+        }
+        @keyframes skema-processing-shimmer {
+          0% {
+            background-position: -200% 0;
+          }
+          100% {
+            background-position: 200% 0;
+          }
+        }
+        @keyframes skema-processing-border {
+          0%, 100% {
+            border-color: rgba(139, 92, 246, 0.6);
+          }
+          50% {
+            border-color: rgba(139, 92, 246, 1);
+          }
+        }
+        @keyframes skema-processing-spinner {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
+      <div
+        data-skema="processing-overlay"
+        style={{
+          position: 'fixed',
+          left: viewportX,
+          top: viewportY,
+          width: boundingBox.width,
+          height: boundingBox.height,
+          border: '2px solid rgba(139, 92, 246, 0.8)',
+          borderRadius: 4,
+          pointerEvents: 'none',
+          zIndex: 999998,
+          animation: 'skema-processing-pulse 1.5s ease-in-out infinite, skema-processing-border 1.5s ease-in-out infinite',
+          background: 'linear-gradient(90deg, transparent 0%, rgba(139, 92, 246, 0.1) 50%, transparent 100%)',
+          backgroundSize: '200% 100%',
+        }}
+      >
+        {/* Shimmer effect */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%)',
+            backgroundSize: '200% 100%',
+            animation: 'skema-processing-shimmer 2s linear infinite',
+            borderRadius: 2,
+          }}
+        />
+        {/* Loading indicator badge */}
+        <div
+          style={{
+            position: 'absolute',
+            top: -12,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 10px',
+            backgroundColor: '#8B5CF6',
+            borderRadius: 12,
+            boxShadow: '0 2px 8px rgba(139, 92, 246, 0.4)',
+          }}
+        >
+          {/* Spinner */}
+          <div
+            style={{
+              width: 12,
+              height: 12,
+              border: '2px solid rgba(255, 255, 255, 0.3)',
+              borderTopColor: 'white',
+              borderRadius: '50%',
+              animation: 'skema-processing-spinner 0.8s linear infinite',
+            }}
+          />
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 500,
+              color: 'white',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Applying changes...
+          </span>
+        </div>
+      </div>
+    </>
+  );
+};
+
 // Annotations sidebar
 const AnnotationsSidebar: React.FC<{
   annotations: Annotation[];
@@ -659,6 +777,7 @@ export const Skema: React.FC<SkemaProps> = ({
   toggleShortcut = 'mod+shift+e',
   initialAnnotations = [],
   zIndex = 99999,
+  isProcessing = false,
 }) => {
   const [isActive, setIsActive] = useState(enabled);
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
@@ -666,6 +785,7 @@ export const Skema: React.FC<SkemaProps> = ({
   const [pendingAnnotation, setPendingAnnotation] = useState<PendingAnnotation | null>(null);
   const [pendingExiting, setPendingExiting] = useState(false);
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
+  const [processingBoundingBox, setProcessingBoundingBox] = useState<BoundingBox | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const popupRef = useRef<AnnotationPopupHandle>(null);
   const lastDoubleClickRef = useRef<number>(0);
@@ -746,6 +866,13 @@ export const Skema: React.FC<SkemaProps> = ({
   useEffect(() => {
     onAnnotationsChange?.(annotations);
   }, [annotations, onAnnotationsChange]);
+
+  // Clear processing bounding box when processing completes
+  useEffect(() => {
+    if (!isProcessing) {
+      setProcessingBoundingBox(null);
+    }
+  }, [isProcessing]);
 
   // Helper to check if there are drawings in the current tldraw selection
   const getSelectedDrawings = useCallback(() => {
@@ -1094,6 +1221,10 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         };
       }
 
+      // Store the bounding box for loading animation
+      if (pendingAnnotation.boundingBox) {
+        setProcessingBoundingBox(pendingAnnotation.boundingBox);
+      }
       onAnnotationSubmit(submittedAnnotation, comment);
     }
 
@@ -1709,6 +1840,14 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
 
       {/* DOM selection highlights */}
       <SelectionOverlay selections={domSelections} />
+
+      {/* Processing loading overlay */}
+      {isProcessing && processingBoundingBox && (
+        <ProcessingOverlay
+          boundingBox={processingBoundingBox}
+          scrollOffset={scrollOffset}
+        />
+      )}
 
       {/* Annotation markers (numbered indicators) */}
       <AnnotationMarkersLayer

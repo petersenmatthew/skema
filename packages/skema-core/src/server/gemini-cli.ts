@@ -288,28 +288,32 @@ ${positionContext}${textContext}${nearbyContext}${imageNote}
 3. **Infer Missing Details:** If something is underspecified, use your expertise to make the best choice. An informed decision is better than an incomplete component.
 
 ## Implementation Guidelines
-- Create a React component with inline styles or Tailwind CSS classes
+- **CRITICAL: DO NOT CREATE NEW COMPONENT FILES.** Add your code directly inline within the existing JSX of the page file.
+- DO NOT Modify anything other than react code, and don't run any commands. You won't need to. 
+- Write the UI as inline JSX elements (divs, sections, etc.) directly in the return statement - NOT as a separate component definition
+- Use Tailwind CSS classes for styling (the project uses Tailwind)
 - Do NOT use hardcoded pixel positions or absolute coordinates - integrate naturally with existing page flow
 - Use flexbox, grid, or relative positioning to place the component appropriately
 - If the sketch shows:
   - **Rectangle/box:** Card, container, button, or input field depending on context
   - **Text elements:** Headings, paragraphs, or labels with appropriate hierarchy
   - **Form layout:** Input fields with labels, proper spacing
-  - **Icons/shapes:** Use appropriate icons from lucide-react or inline SVGs
+  - **Icons/shapes:** Use appropriate icons from lucide-react or inline SVGs (but DO NOT add new imports mid-file)
   - **Navigation:** Nav links, menus, or breadcrumbs
   - **Lists:** Ordered/unordered lists or grid layouts
-- Make the component fit naturally with the existing page design
+- Make the UI fit naturally with the existing page design
 - Style it nicely and according to the existing codebase
 - Use semantic HTML and ARIA attributes where appropriate
-- The component should integrate well with the existing codebase structure
+- **NEVER add import statements inside JSX or in the middle of a file - all imports must be at the very top of the file**
+- If you need a new import, add it at the TOP of the file with the other imports, then use it in the JSX below
 
-## Annotations
-- Any **red marks** in the drawing are instructions—follow them but don't render them
-- Text annotations describe intent or constraints
+Make the changes directly. Insert the UI elements inline at the appropriate location in the page. No explanation needed.
 
-Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.
-
-IMPORTANT: Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself.`;
+IMPORTANT RULES TO AVOID ERRORS:
+1. Do NOT create new component files - write everything inline in the existing file
+2. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
+3. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
+4. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports`;
 
   return prompt;
 }
@@ -449,9 +453,10 @@ async function analyzeImageWithGemini(apiKey: string, base64Image: string, model
     ];
 
     const imageAnalysisPrompt = `
-Analyze this UI wireframe sketch in extreme detail for a front-end developer.
+Analyze this UI wireframe sketch in some detail (not too long) for a front-end developer.
 
 Describe every element, layout, spacing, icons, and text you see.
+Focus on whats apparent, don't overthink it.
 Mention relative positions and hierarchy.
 Be distinct about what is drawn vs what might be background.
 

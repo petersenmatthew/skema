@@ -1,7 +1,7 @@
 "use client";
 
 import { Skema, type Annotation } from "skema-core";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 
 // Event type from skema-core/server
 interface GeminiCLIEvent {
@@ -17,9 +17,12 @@ interface GeminiCLIEvent {
 export function SkemaWrapper() {
   // Track annotation IDs to their change IDs for reverting
   const annotationChangesRef = useRef<Map<string, string[]>>(new Map());
+  // Track when an annotation is being processed
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleAnnotationSubmit = useCallback(async (annotation: Annotation, comment: string) => {
     console.log('[Skema] Annotation submitted:', { annotation, comment });
+    setIsProcessing(true);
 
     try {
       const response = await fetch('/api/gemini', {
@@ -88,6 +91,7 @@ export function SkemaWrapper() {
                   break;
                 case 'done':
                   console.log('%c[Skema] Done', 'color: #10b981; font-weight: bold', event);
+                  setIsProcessing(false);
                   break;
               }
             } catch {
@@ -104,6 +108,7 @@ export function SkemaWrapper() {
       }
     } catch (error) {
       console.error('[Skema] Failed to submit annotation:', error);
+      setIsProcessing(false);
     }
   }, []);
 
@@ -142,6 +147,7 @@ export function SkemaWrapper() {
       enabled={true}
       onAnnotationSubmit={handleAnnotationSubmit}
       onAnnotationDelete={handleAnnotationDelete}
+      isProcessing={isProcessing}
     />
   );
 }
