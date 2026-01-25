@@ -45,9 +45,9 @@ export function Header() {
           <ThemeToggle />
           <Link
             href="https://github.com/petersenmatthew/skema"
-            className="text-muted-foreground transition-colors hover:text-foreground"
+            className="text-foreground/60 transition-colors hover:text-foreground"
           >
-            <Github className="h-4 w-4" />
+            <Github className="h-4 w-4 stroke-current" />
           </Link>
         </div>
       </div>
