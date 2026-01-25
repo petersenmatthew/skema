@@ -116,7 +116,7 @@ export interface DrawingAnnotation {
     tagName: string;
     text?: string;
   }>;
-}f
+}
 
 /**
  * Gesture action annotation

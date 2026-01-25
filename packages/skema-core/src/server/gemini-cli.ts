@@ -161,7 +161,7 @@ Element: `;
 
 
 
-  prompt += `\n\nMake minimal changes. No explanation needed.`;
+  prompt += `\n\nMake minimal changes. No explanation needed.\nNEVER modify next-env.d.ts.`;
 
   return prompt;
 }
@@ -214,7 +214,8 @@ function buildForensicPrompt(annotation: Annotation & { computedStyles?: string;
 **Nearby Elements:** ${(annotation as any).nearbyElements?.map((e: any) => e.tagName).join(', ') || 'none'}
 **Feedback:** ${comment || 'No comment'}
 
-Make the change directly. No explanation needed.`;
+Make the change directly. No explanation needed.
+NEVER modify next-env.d.ts.`;
 }
 
 /**
@@ -310,7 +311,8 @@ ${positionContext}${textContext}${nearbyContext}${imageNote}
 - Any **red marks** in the drawing are instructions—follow them but don't render them
 - Text annotations describe intent or constraints
 
-Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.`;
+Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.
+NEVER modify next-env.d.ts.`;
 
   return prompt;
 }
