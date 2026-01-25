@@ -127,6 +127,11 @@ export function buildPromptFromAnnotation(
 ): string {
   const fastMode = options?.fastMode ?? true;
 
+  // Handle drawing annotations specially - they generate new components
+  if (annotation.type === 'drawing') {
+    return buildDrawingPrompt(annotation, projectContext);
+  }
+
   // Fast mode: minimal prompt for quick changes
   if (fastMode) {
     const selector = (annotation as { selector?: string }).selector || '';
@@ -179,6 +184,75 @@ Element: `;
   }
 
   prompt += `\n\nMake minimal changes. No explanation needed.`;
+
+  return prompt;
+}
+
+/**
+ * Build a specialized prompt for drawing annotations to generate React components
+ */
+function buildDrawingPrompt(
+  annotation: Partial<Annotation> & { comment?: string },
+  projectContext?: ProjectContext
+): string {
+  const drawingAnnotation = annotation as {
+    boundingBox?: { x: number; y: number; width: number; height: number };
+    drawingSvg?: string;
+    nearbyElements?: Array<{ selector: string; tagName: string; text?: string }>;
+    comment?: string;
+  };
+
+  const bbox = drawingAnnotation.boundingBox;
+  const svg = drawingAnnotation.drawingSvg;
+  const nearbyElements = drawingAnnotation.nearbyElements || [];
+  const comment = drawingAnnotation.comment || 'Create a component based on this drawing';
+
+  // Build position context
+  let positionContext = '';
+  if (bbox) {
+    positionContext = `Position: ${Math.round(bbox.x)}px from left, ${Math.round(bbox.y)}px from top (${Math.round(bbox.width)}×${Math.round(bbox.height)}px area)`;
+  }
+
+  // Build nearby elements context
+  let nearbyContext = '';
+  if (nearbyElements.length > 0) {
+    const elementList = nearbyElements
+      .slice(0, 5)
+      .map(el => `- <${el.tagName.toLowerCase()}>${el.text ? `: "${el.text.slice(0, 50)}"` : ''} (${el.selector})`)
+      .join('\n');
+    nearbyContext = `\nNearby DOM elements (for placement reference):\n${elementList}`;
+  }
+
+  // Build SVG context - include the actual drawing
+  let svgContext = '';
+  if (svg) {
+    // Clean up SVG for inclusion in prompt (remove unnecessary whitespace)
+    const cleanSvg = svg.replace(/\s+/g, ' ').trim();
+    svgContext = `\n\nUser's sketch/drawing (SVG):\n\`\`\`svg\n${cleanSvg}\n\`\`\``;
+  }
+
+  // Construct the full prompt
+  const prompt = `Create a new React component based on this user sketch and add it to the page.
+
+User's request: "${comment}"
+
+${positionContext}${nearbyContext}${svgContext}
+
+Instructions:
+1. Analyze the sketch/drawing to understand what UI component the user wants
+2. Create a React component that matches the visual intent of the sketch
+3. Use inline styles or Tailwind CSS classes for styling
+4. Insert the component at the appropriate location in the page (near the specified position)
+5. If the sketch shows:
+   - A rectangle/box: Create a card, container, or button depending on context
+   - Text elements: Create headings, paragraphs, or labels
+   - A form layout: Create form inputs
+   - Icons or shapes: Use appropriate icons or SVG elements
+   - Navigation elements: Create nav links or menus
+6. Match the approximate size and position from the bounding box
+7. Make the component fit naturally with the existing page design
+
+Make the changes directly. No explanation needed.`;
 
   return prompt;
 }

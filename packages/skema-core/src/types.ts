@@ -96,6 +96,16 @@ export interface DrawingAnnotation {
   boundingBox: BoundingBox;
   relatedTo?: string; // DOM selector if linked to element
   timestamp: number;
+  /** User annotation comment describing what to build */
+  comment?: string;
+  /** SVG representation of the drawing for AI processing */
+  drawingSvg?: string;
+  /** Nearby DOM elements that the drawing may relate to */
+  nearbyElements?: Array<{
+    selector: string;
+    tagName: string;
+    text?: string;
+  }>;
 }
 
 /**

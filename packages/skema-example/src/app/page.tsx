@@ -135,8 +135,11 @@ export default function Home() {
           <button className="btn btn-primary">
             Get Started
           </button>
-          <button className="btn btn-secondary">
-            
+          <button
+            className="rounded-md bg-gray-200 px-4 py-2 text-gray-800 shadow-sm hover:bg-gray-300 transition-colors duration-200"
+            style={{ marginLeft: '16px', width: '118px', height: '50px' }}
+          >
+            FAQ
           </button>
         </div>
       </section>

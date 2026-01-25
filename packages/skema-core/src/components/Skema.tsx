@@ -663,7 +663,7 @@ export const Skema: React.FC<SkemaProps> = ({
   }, [getSelectedDrawings]);
 
   // Submit annotation from popup
-  const handleAnnotationSubmit = useCallback((comment: string) => {
+  const handleAnnotationSubmit = useCallback(async (comment: string) => {
     if (!pendingAnnotation) return;
 
     if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
@@ -702,24 +702,35 @@ export const Skema: React.FC<SkemaProps> = ({
         setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...groupedSelection }]);
       }
     } else if (pendingAnnotation.annotationType === 'drawing' && pendingAnnotation.shapeIds) {
-      // Handle drawing annotation
+      // Handle drawing annotation - extract SVG and nearby elements
+      const bbox = pendingAnnotation.boundingBox!;
+      
+      // Get nearby DOM elements for context
+      const nearbyElements = pendingAnnotation.selections?.map(s => ({
+        selector: s.selector,
+        tagName: s.tagName,
+        text: s.text?.slice(0, 100),
+      })) || [];
+
       const drawingAnnotation: Annotation = {
         id: `drawing-${Date.now()}`,
         type: 'drawing',
         tool: 'draw',
         shapes: pendingAnnotation.shapeIds,
-        boundingBox: pendingAnnotation.boundingBox!,
+        boundingBox: bbox,
         timestamp: Date.now(),
+        comment,
+        nearbyElements,
       };
       setAnnotations((prev) => [...prev, drawingAnnotation]);
 
       // FORENSIC LOGGING - Drawing annotation
-      const bbox = pendingAnnotation.boundingBox!;
       const drawingLog = `
 ### ${annotations.length + 1}. Drawing (${pendingAnnotation.shapeIds?.length || 0} shapes)
 **Position:** x:${Math.round(bbox.x)}, y:${Math.round(bbox.y)} (${Math.round(bbox.width)}×${Math.round(bbox.height)}px)
 **Annotation at:** ${((bbox.x + bbox.width / 2) / window.innerWidth * 100).toFixed(1)}% from left, ${Math.round(bbox.y + bbox.height / 2)}px from top
 **Shape IDs:** ${pendingAnnotation.shapeIds?.join(', ') || 'none'}
+**Nearby Elements:** ${nearbyElements.map(e => e.tagName).join(', ') || 'none'}
 **Feedback:** ${comment}
 `;
       console.log(drawingLog);
@@ -821,6 +832,32 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           };
         }
       } else {
+        // Drawing annotation - extract SVG from shapes
+        const editor = editorRef.current;
+        let drawingSvg: string | undefined;
+        
+        if (editor && pendingAnnotation.shapeIds && pendingAnnotation.shapeIds.length > 0) {
+          try {
+            // Get SVG export of the drawing shapes
+            const svgResult = await editor.getSvgString(pendingAnnotation.shapeIds as TLShapeId[], {
+              padding: 10,
+              background: false,
+            });
+            if (svgResult?.svg) {
+              drawingSvg = svgResult.svg;
+            }
+          } catch (e) {
+            console.warn('[Skema] Failed to export drawing SVG:', e);
+          }
+        }
+
+        // Get nearby DOM elements for context
+        const nearbyElements = pendingAnnotation.selections?.map(s => ({
+          selector: s.selector,
+          tagName: s.tagName,
+          text: s.text?.slice(0, 100),
+        })) || [];
+
         submittedAnnotation = {
           id: `drawing-${Date.now()}`,
           type: 'drawing',
@@ -828,6 +865,9 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           shapes: pendingAnnotation.shapeIds || [],
           boundingBox: pendingAnnotation.boundingBox!,
           timestamp: Date.now(),
+          comment,
+          drawingSvg,
+          nearbyElements,
         };
       }
 
