@@ -150,7 +150,7 @@ export function buildPromptFromAnnotation(
       target = `<${tag}>`;
     }
 
-    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. IMPORTANT: Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
+    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. CRITICAL: Do NOT create new files. Only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
   }
 
   // Detailed mode: full context
@@ -189,7 +189,7 @@ Element: `;
     prompt += `annotation at (${annotation.boundingBox?.x}, ${annotation.boundingBox?.y})`;
   }
 
-  prompt += `\n\nMake minimal changes. IMPORTANT: Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
+  prompt += `\n\nMake minimal changes. CRITICAL: Do NOT create new files - only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
 
   return prompt;
 }
@@ -288,7 +288,8 @@ ${positionContext}${textContext}${nearbyContext}${imageNote}
 3. **Infer Missing Details:** If something is underspecified, use your expertise to make the best choice. An informed decision is better than an incomplete component.
 
 ## Implementation Guidelines
-- **CRITICAL: DO NOT CREATE NEW COMPONENT FILES.** Add your code directly inline within the existing JSX of the page file.
+- **CRITICAL: DO NOT CREATE ANY NEW FILES. NEVER CREATE NEW FILES. You must ONLY edit existing files.**
+- Add your code directly inline within the existing JSX of the page file - do NOT create separate component files.
 - DO NOT Modify anything other than react code, and don't run any commands. You won't need to. 
 - Write the UI as inline JSX elements (divs, sections, etc.) directly in the return statement - NOT as a separate component definition
 - Use Tailwind CSS classes for styling (the project uses Tailwind)
@@ -310,10 +311,11 @@ ${positionContext}${textContext}${nearbyContext}${imageNote}
 Make the changes directly. Insert the UI elements inline at the appropriate location in the page. No explanation needed.
 
 IMPORTANT RULES TO AVOID ERRORS:
-1. Do NOT create new component files - write everything inline in the existing file
-2. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
-3. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
-4. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports`;
+1. **NEVER CREATE NEW FILES** - Do NOT create new component files, utility files, or any other files. Write everything inline in the existing file
+2. You do not need to update package.json or anything, just add / edit the react component.
+3. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
+4. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
+5. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports`;
 
   return prompt;
 }
