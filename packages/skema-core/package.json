@@ -2,7 +2,22 @@
   "name": "skema-core",
   "version": "0.1.0",
   "description": "Drawing-based website development overlay using tldraw",
+  "author": "Justin Wu",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/petersenmatthew/skema"
+  },
+  "homepage": "https://github.com/petersenmatthew/skema#readme",
+  "keywords": [
+    "react",
+    "tldraw",
+    "annotation",
+    "drawing",
+    "dom",
+    "overlay",
+    "development-tool"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
