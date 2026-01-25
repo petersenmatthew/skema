@@ -382,6 +382,12 @@ export function createGeminiCLIStream(
   options?: GeminiCLIOptions
 ): ReadableStream<Uint8Array> {
   const prompt = buildPromptFromAnnotation(annotation, projectContext, { fastMode: options?.fastMode ?? true });
+
+  // Log the full prompt being sent to Gemini CLI
+  console.log('\n========== GEMINI CLI PROMPT ==========');
+  console.log(prompt);
+  console.log('========================================\n');
+
   const encoder = new TextEncoder();
 
   return new ReadableStream({
