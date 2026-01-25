@@ -161,7 +161,7 @@ Element: `;
 
 
 
-  prompt += `\n\nMake minimal changes. No explanation needed.\nNEVER modify next-env.d.ts.`;
+  prompt += `\n\nMake minimal changes. Prefer modifying existing code over creating new component definitions to avoid runtime errors and HMR breaks.\nNo explanation needed.\nNEVER modify next-env.d.ts.`;
 
   return prompt;
 }
@@ -214,7 +214,7 @@ function buildForensicPrompt(annotation: Annotation & { computedStyles?: string;
 **Nearby Elements:** ${(annotation as any).nearbyElements?.map((e: any) => e.tagName).join(', ') || 'none'}
 **Feedback:** ${comment || 'No comment'}
 
-Make the change directly. No explanation needed.
+  Make the change directly. Prefer modifying existing code over creating new component definitions to avoid runtime errors and HMR breaks. No explanation needed.
 NEVER modify next-env.d.ts.`;
 }
 
@@ -384,7 +384,12 @@ function buildDrawingPrompt(
   }
 
   // Construct the comprehensive prompt
-  const prompt = `You are a Principal Front-End Engineer. Create a production-ready React component from this wireframe sketch that **precisely matches the size, position, and style** of the existing page.
+  const prompt = `You are a Principal Front-End Engineer. Generate React code from this wireframe sketch that **precisely matches the size, position, and style** of the existing page.
+
+## CRITICAL: Development Stability
+- **Do NOT create whole new component definitions** (e.g. \`const NewComponent = ...\`) unless absolutely necessary or explicitly requested.
+- Prefer generating direct JSX/TSX elements that can be placed inline.
+- Your goal is to avoid runtime errors and HMR (Fast Refresh) invalidations that occur when adding new component functions file-structure-wise.
 
 ## User's Request
 "${comment}"
@@ -559,20 +564,15 @@ async function analyzeImageWithGemini(apiKey: string, base64Image: string, model
     ];
 
     const result = await model.generateContent([
-      `Interpret this UI wireframe as a front-end developer would. Focus on:
+      `You are helping a developer turn a sketch into code. Describe what you see in this drawing:
 
-1. **What UI component/pattern this represents** (e.g., "a navigation bar", "a card grid", "a form with 3 inputs")
-2. **Layout structure** - how elements are arranged (rows, columns, grid)
-3. **Spacing relationships** - relative gaps between elements
-4. **Any text content** - read and include all visible text/labels
-5. **Interactive elements** - buttons, inputs, links, icons
+1. **What is drawn** - shapes, icons, symbols, text, or UI elements
+2. **Layout** - how elements are positioned relative to each other
+3. **Any text content** - read and include all visible text/labels
 
-DO NOT describe:
-- The drawing style or quality (hand-drawn, messy, sketchy, etc.)
-- Line thickness or stroke characteristics
-- Whether it looks rough or polished
+This could be anything: a UI component, an icon, a shape, a logo, decorative element, etc. Just describe what you see so it can be recreated in code.
 
-Just tell me WHAT this wireframe represents and HOW the elements are organized.`,
+Keep your response concise and factual. Do NOT refuse to analyze the image or say it's not a wireframe.`,
       ...imageParts,
     ]);
 
