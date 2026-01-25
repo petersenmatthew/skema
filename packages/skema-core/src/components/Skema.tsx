@@ -869,6 +869,7 @@ export const Skema: React.FC<SkemaProps> = ({
   onAnnotationsChange,
   onAnnotationSubmit,
   onAnnotationDelete,
+  onProcessingCancel,
   toggleShortcut = 'mod+shift+e',
   initialAnnotations = [],
   zIndex = 99999,
@@ -1407,14 +1408,23 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     }, 150);
   }, [pendingAnnotation, onAnnotationSubmit]);
 
-  // Cancel annotation popup
+  // Cancel annotation popup and any in-progress processing
   const handleAnnotationCancel = useCallback(() => {
     setPendingExiting(true);
+    
+    // If processing is active, cancel it
+    if (isProcessing) {
+      onProcessingCancel?.();
+    }
+    
+    // Always clear the processing bounding box on cancel
+    setProcessingBoundingBox(null);
+    
     setTimeout(() => {
       setPendingAnnotation(null);
       setPendingExiting(false);
     }, 150);
-  }, []);
+  }, [isProcessing, onProcessingCancel]);
 
   // Delete an annotation (when clicking on marker)
   const handleDeleteAnnotation = useCallback((annotation: Annotation) => {
@@ -1423,9 +1433,16 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       setDomSelections((prev) => prev.filter((s) => s.id !== annotation.id));
     }
     setHoveredMarkerId(null);
+    
+    // If processing is active, cancel it (user is deleting while processing)
+    if (isProcessing) {
+      onProcessingCancel?.();
+      setProcessingBoundingBox(null);
+    }
+    
     // Call the delete callback (for reverting Gemini changes)
     onAnnotationDelete?.(annotation.id);
-  }, [onAnnotationDelete]);
+  }, [onAnnotationDelete, isProcessing, onProcessingCancel]);
 
   // Clear all annotations
   const handleClear = useCallback(() => {

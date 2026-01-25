@@ -19,9 +19,21 @@ export function SkemaWrapper() {
   const annotationChangesRef = useRef<Map<string, string[]>>(new Map());
   // Track when an annotation is being processed
   const [isProcessing, setIsProcessing] = useState(false);
+  // AbortController for cancelling in-progress requests
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleAnnotationSubmit = useCallback(async (annotation: Annotation, comment: string) => {
     console.log('[Skema] Annotation submitted:', { annotation, comment });
+    
+    // Cancel any existing request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     setIsProcessing(true);
 
     try {
@@ -39,6 +51,7 @@ export function SkemaWrapper() {
             },
           },
         }),
+        signal: abortController.signal,
       });
 
       if (!response.ok) {
@@ -107,9 +120,29 @@ export function SkemaWrapper() {
         annotationChangesRef.current.set(annotation.id, [annotationId]);
       }
     } catch (error) {
-      console.error('[Skema] Failed to submit annotation:', error);
+      // Don't log abort errors - they're intentional cancellations
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('[Skema] Request cancelled by user');
+      } else {
+        console.error('[Skema] Failed to submit annotation:', error);
+      }
       setIsProcessing(false);
+    } finally {
+      // Clean up abort controller reference
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
     }
+  }, []);
+  
+  // Cancel in-progress annotation processing
+  const handleProcessingCancel = useCallback(() => {
+    console.log('[Skema] Cancelling in-progress request');
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessing(false);
   }, []);
 
   const handleAnnotationDelete = useCallback(async (annotationId: string) => {
@@ -147,6 +180,7 @@ export function SkemaWrapper() {
       enabled={true}
       onAnnotationSubmit={handleAnnotationSubmit}
       onAnnotationDelete={handleAnnotationDelete}
+      onProcessingCancel={handleProcessingCancel}
       isProcessing={isProcessing}
     />
   );

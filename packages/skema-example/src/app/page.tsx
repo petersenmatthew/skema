@@ -24,10 +24,9 @@ export default function OverviewPage() {
               <a
                 href="https://github.com/petersenmatthew/skema"
                 className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-black transition-colors hover:bg-muted"
-              >
-                GitHub
-              </a>
-            </div>
+                        >
+                          aeofub
+                        </a>            </div>
           </section>
 
           {/* What is Skema */}

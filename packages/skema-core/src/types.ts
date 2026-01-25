@@ -224,6 +224,8 @@ export interface SkemaProps {
   zIndex?: number;
   /** Whether an annotation is currently being processed (shows loading animation) */
   isProcessing?: boolean;
+  /** Callback when user cancels an in-progress annotation (clicks X during processing) */
+  onProcessingCancel?: () => void;
 }
 
 /**
