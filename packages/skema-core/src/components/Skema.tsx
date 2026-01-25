@@ -625,11 +625,11 @@ const ProcessingOverlay: React.FC<{
       <style>{`
         @keyframes skema-processing-pulse {
           0%, 100% {
-            opacity: 0.4;
+            opacity: 0.7;
             transform: scale(1);
           }
           50% {
-            opacity: 0.7;
+            opacity: 0.95;
             transform: scale(1.02);
           }
         }
@@ -643,7 +643,7 @@ const ProcessingOverlay: React.FC<{
         }
         @keyframes skema-processing-border {
           0%, 100% {
-            border-color: rgba(139, 92, 246, 0.6);
+            border-color: rgba(139, 92, 246, 0.85);
           }
           50% {
             border-color: rgba(139, 92, 246, 1);
@@ -685,12 +685,12 @@ const ProcessingOverlay: React.FC<{
           top: viewportY,
           width: boundingBox.width,
           height: boundingBox.height,
-          border: '2px solid rgba(139, 92, 246, 0.8)',
+          border: '3px solid rgba(139, 92, 246, 0.95)',
           borderRadius: 4,
           pointerEvents: 'none',
           zIndex: 999998,
           animation: 'skema-processing-pulse 1.5s ease-in-out infinite, skema-processing-border 1.5s ease-in-out infinite',
-          background: 'linear-gradient(90deg, transparent 0%, rgba(139, 92, 246, 0.1) 50%, transparent 100%)',
+          background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.35) 50%, rgba(139, 92, 246, 0.15) 100%)',
           backgroundSize: '200% 100%',
         }}
       >
@@ -699,7 +699,7 @@ const ProcessingOverlay: React.FC<{
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%)',
+            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.25) 50%, transparent 100%)',
             backgroundSize: '200% 100%',
             animation: 'skema-processing-shimmer 2s linear infinite',
             borderRadius: 2,
