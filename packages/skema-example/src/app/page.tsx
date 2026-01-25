@@ -71,6 +71,11 @@ export default function Home() {
 
       const result = await response.json();
       console.log('[Skema] Revert result:', result);
+
+      // Reload the page to see reverted changes (Next.js doesn't detect external file changes)
+      if (result.success && result.message !== 'No changes to revert') {
+        window.location.reload();
+      }
     } catch (error) {
       console.error('[Skema] Revert failed:', error);
     }

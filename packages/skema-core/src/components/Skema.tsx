@@ -474,6 +474,8 @@ const AnnotationsSidebar: React.FC<{
 export const Skema: React.FC<SkemaProps> = ({
   enabled = true,
   onAnnotationsChange,
+  onAnnotationSubmit,
+  onAnnotationDelete,
   toggleShortcut = 'mod+shift+e',
   initialAnnotations = [],
   zIndex = 99999,
@@ -785,13 +787,60 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       console.log(forensicLog);
     }
 
+    // Call onAnnotationSubmit callback for real-time integrations (e.g., Gemini)
+    if (onAnnotationSubmit) {
+      // Construct the annotation that was just created
+      let submittedAnnotation: Annotation;
+
+      if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
+        const selections = pendingAnnotation.selections;
+        if (selections.length === 1) {
+          submittedAnnotation = { type: 'dom_selection' as const, ...selections[0], comment };
+        } else {
+          submittedAnnotation = {
+            type: 'dom_selection' as const,
+            id: `group-${Date.now()}`,
+            selector: selections.map(s => s.selector).join(', '),
+            tagName: pendingAnnotation.element,
+            elementPath: selections[0].elementPath,
+            text: selections.map(s => s.text).filter(Boolean).join(' | ').slice(0, 200),
+            boundingBox: pendingAnnotation.boundingBox!,
+            timestamp: Date.now(),
+            pathname: selections[0].pathname,
+            comment,
+            isMultiSelect: true,
+            elements: selections.map(s => ({
+              selector: s.selector,
+              tagName: s.tagName,
+              elementPath: s.elementPath,
+              text: s.text,
+              boundingBox: s.boundingBox,
+              cssClasses: s.cssClasses,
+              attributes: s.attributes,
+            })),
+          };
+        }
+      } else {
+        submittedAnnotation = {
+          id: `drawing-${Date.now()}`,
+          type: 'drawing',
+          tool: 'draw',
+          shapes: pendingAnnotation.shapeIds || [],
+          boundingBox: pendingAnnotation.boundingBox!,
+          timestamp: Date.now(),
+        };
+      }
+
+      onAnnotationSubmit(submittedAnnotation, comment);
+    }
+
     // Animate out and clear
     setPendingExiting(true);
     setTimeout(() => {
       setPendingAnnotation(null);
       setPendingExiting(false);
     }, 150);
-  }, [pendingAnnotation]);
+  }, [pendingAnnotation, onAnnotationSubmit]);
 
   // Cancel annotation popup
   const handleAnnotationCancel = useCallback(() => {
@@ -809,7 +858,9 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       setDomSelections((prev) => prev.filter((s) => s.id !== annotation.id));
     }
     setHoveredMarkerId(null);
-  }, []);
+    // Call the delete callback (for reverting Gemini changes)
+    onAnnotationDelete?.(annotation.id);
+  }, [onAnnotationDelete]);
 
   // Clear all annotations
   const handleClear = useCallback(() => {

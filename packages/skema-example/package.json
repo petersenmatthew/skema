@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next dev",
+    "dev": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next dev -p 3001",
     "build": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next build",
     "start": "NEXT_IGNORE_INCORRECT_LOCKFILE=true bun x next start",
     "lint": "bun x next lint"

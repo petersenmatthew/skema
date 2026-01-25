@@ -137,6 +137,10 @@ export interface SkemaProps {
   enabled?: boolean;
   /** Callback when annotations change */
   onAnnotationsChange?: (annotations: Annotation[]) => void;
+  /** Callback when a single annotation is submitted - for real-time integrations like Gemini */
+  onAnnotationSubmit?: (annotation: Annotation, comment: string) => void;
+  /** Callback when an annotation is deleted - for reverting changes */
+  onAnnotationDelete?: (annotationId: string) => void;
   /** Keyboard shortcut to toggle Skema (default: Cmd/Ctrl + Shift + E) */
   toggleShortcut?: string;
   /** Initial annotations to load */
