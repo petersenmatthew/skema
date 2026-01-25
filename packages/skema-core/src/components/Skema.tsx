@@ -17,12 +17,19 @@ import {
   StateNode,
   TLClickEventInfo,
   ArrowShapeKindStyle,
+  TLDrawShape,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 
 import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotation } from '../types';
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
+import { 
+  isRealtimeScribble, 
+  findOverlappingShapesFromBounds, 
+  getPointsBounds,
+  type Point as GesturePoint 
+} from '../utils/gesture-recognizer';
 import {
   createDOMSelection,
   shouldIgnoreElement,
@@ -786,11 +793,17 @@ export const Skema: React.FC<SkemaProps> = ({
   const [pendingExiting, setPendingExiting] = useState(false);
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [processingBoundingBox, setProcessingBoundingBox] = useState<BoundingBox | null>(null);
+  const [scribbleToast, setScribbleToast] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const popupRef = useRef<AnnotationPopupHandle>(null);
   const lastDoubleClickRef = useRef<number>(0);
   const justFinishedDrawingRef = useRef<boolean>(false);
   const cleanupRef = useRef<(() => void) | null>(null);
+  
+  // Scribble detection refs - for real-time tracking during drawing
+  const scribblePointsRef = useRef<GesturePoint[]>([]);
+  const isDrawingRef = useRef<boolean>(false);
+  const scribbleDetectedRef = useRef<boolean>(false);
 
   // Handle keyboard shortcut to toggle
   useEffect(() => {
@@ -1696,6 +1709,140 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     // Users must manually select their drawings to annotate them
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
 
+  // =============================================================================
+  // Real-time Scribble-to-Delete Gesture Detection
+  // =============================================================================
+  // Track pointer events while draw tool is active to detect scribble gestures
+  // in real-time (before pen release) and delete shapes underneath.
+  
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const handleScribbleDelete = (overlappingIds: TLShapeId[]) => {
+      const editor = editorRef.current;
+      if (!editor || overlappingIds.length === 0) return;
+      
+      // Cancel the current drawing operation
+      editor.cancel();
+      
+      // Delete overlapping shapes
+      editor.deleteShapes(overlappingIds);
+      
+      // Remove any annotations associated with deleted shapes
+      setAnnotations((prev) => prev.filter((annotation) => {
+        if (annotation.type === 'drawing') {
+          const drawingShapes = annotation.shapes as TLShapeId[];
+          return !drawingShapes.some((shapeId) => 
+            overlappingIds.includes(shapeId)
+          );
+        }
+        return true;
+      }));
+      
+      // Show toast notification
+      const message = overlappingIds.length === 1
+        ? 'Deleted 1 shape'
+        : `Deleted ${overlappingIds.length} shapes`;
+      setScribbleToast(message);
+      setTimeout(() => setScribbleToast(null), 2000);
+      
+      console.log(`[Skema] Scribble-delete: removed ${overlappingIds.length} shape(s)`);
+    };
+    
+    const handlePointerDown = (e: PointerEvent) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      
+      // Only track if draw tool is active
+      const currentTool = editor.getCurrentToolId();
+      if (currentTool !== 'draw') return;
+      
+      // Start tracking
+      isDrawingRef.current = true;
+      scribbleDetectedRef.current = false;
+      scribblePointsRef.current = [{ 
+        x: e.clientX + window.scrollX, 
+        y: e.clientY + window.scrollY 
+      }];
+    };
+    
+    const handlePointerMove = (e: PointerEvent) => {
+      const editor = editorRef.current;
+      if (!editor || !isDrawingRef.current || scribbleDetectedRef.current) return;
+      
+      // Only track if draw tool is still active and pointer is down
+      const currentTool = editor.getCurrentToolId();
+      if (currentTool !== 'draw') {
+        isDrawingRef.current = false;
+        return;
+      }
+      
+      // Add point (in page coordinates)
+      const newPoint = { 
+        x: e.clientX + window.scrollX, 
+        y: e.clientY + window.scrollY 
+      };
+      
+      const points = scribblePointsRef.current;
+      const lastPoint = points[points.length - 1];
+      
+      // Only add if moved enough (avoid duplicate points)
+      if (lastPoint) {
+        const dx = newPoint.x - lastPoint.x;
+        const dy = newPoint.y - lastPoint.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 3) return;
+      }
+      
+      points.push(newPoint);
+      scribblePointsRef.current = points;
+      
+      // Check for scribble gesture periodically (every 5 points after initial batch)
+      if (points.length >= 20 && points.length % 5 === 0) {
+        const gestureResult = isRealtimeScribble(points);
+        
+        if (gestureResult.isScribble) {
+          // Get bounds of the scribble path
+          const bounds = getPointsBounds(points);
+          
+          if (bounds) {
+            // Find shapes underneath the scribble
+            const overlappingIds = findOverlappingShapesFromBounds(editor, bounds, []);
+            
+            if (overlappingIds.length > 0) {
+              // Mark as detected to prevent re-triggering
+              scribbleDetectedRef.current = true;
+              isDrawingRef.current = false;
+              
+              // Trigger deletion
+              handleScribbleDelete(overlappingIds);
+            }
+          }
+        }
+      }
+    };
+    
+    const handlePointerUp = () => {
+      // Reset tracking state
+      isDrawingRef.current = false;
+      scribblePointsRef.current = [];
+      scribbleDetectedRef.current = false;
+    };
+    
+    // Add listeners with capture to track before tldraw
+    document.addEventListener('pointerdown', handlePointerDown, { capture: true });
+    document.addEventListener('pointermove', handlePointerMove, { capture: true });
+    document.addEventListener('pointerup', handlePointerUp, { capture: true });
+    document.addEventListener('pointercancel', handlePointerUp, { capture: true });
+    
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
+      document.removeEventListener('pointermove', handlePointerMove, { capture: true });
+      document.removeEventListener('pointerup', handlePointerUp, { capture: true });
+      document.removeEventListener('pointercancel', handlePointerUp, { capture: true });
+    };
+  }, [isActive]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -1950,6 +2097,45 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           marginRight: '4px',
         }}>⌘⇧E</kbd> to toggle Skema
       </div>
+
+      {/* Scribble-delete toast notification */}
+      {scribbleToast && (
+        <div
+          data-skema="scribble-toast"
+          style={{
+            position: 'fixed',
+            bottom: 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '10px 20px',
+            backgroundColor: 'rgba(239, 68, 68, 0.95)',
+            color: 'white',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: 500,
+            pointerEvents: 'none',
+            zIndex: zIndex + 10,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            animation: 'skema-toast-fade 0.2s ease-out',
+          }}
+        >
+          {scribbleToast}
+        </div>
+      )}
+
+      {/* Toast animation styles */}
+      <style>{`
+        @keyframes skema-toast-fade {
+          from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };
