@@ -17,12 +17,19 @@ import {
   StateNode,
   TLClickEventInfo,
   ArrowShapeKindStyle,
+  TLDrawShape,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 
 import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotation } from '../types';
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
+import { 
+  isRealtimeScribble, 
+  findOverlappingShapesFromBounds, 
+  getPointsBounds,
+  type Point as GesturePoint 
+} from '../utils/gesture-recognizer';
 import {
   createDOMSelection,
   shouldIgnoreElement,
@@ -519,6 +526,92 @@ const SelectionOverlay: React.FC<{ selections: DOMSelection[] }> = ({ selections
 // Processing Loading Overlay - Shows animation when changes are being made
 // =============================================================================
 
+// Animated shape loader component - cycles through colorful shapes
+const ShapeLoader: React.FC = () => {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: 28,
+        height: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {/* Orange Star */}
+      <svg
+        className="skema-shape skema-shape-1"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <polygon
+          points="12,2 15,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9,9"
+          fill="#F97316"
+        />
+      </svg>
+      {/* Yellow Parallelogram */}
+      <svg
+        className="skema-shape skema-shape-2"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <polygon
+          points="6,4 22,4 18,20 2,20"
+          fill="#FACC15"
+        />
+      </svg>
+      {/* Red Triangle */}
+      <svg
+        className="skema-shape skema-shape-3"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <polygon
+          points="12,3 22,21 2,21"
+          fill="#EF4444"
+        />
+      </svg>
+      {/* Blue Circle */}
+      <svg
+        className="skema-shape skema-shape-4"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <circle cx="12" cy="12" r="10" fill="#3B82F6" />
+      </svg>
+      {/* Green Square */}
+      <svg
+        className="skema-shape skema-shape-5"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <rect x="3" y="3" width="18" height="18" fill="#22C55E" />
+      </svg>
+    </div>
+  );
+};
+
 const ProcessingOverlay: React.FC<{
   boundingBox: BoundingBox;
   scrollOffset: { x: number; y: number };
@@ -532,11 +625,11 @@ const ProcessingOverlay: React.FC<{
       <style>{`
         @keyframes skema-processing-pulse {
           0%, 100% {
-            opacity: 0.4;
+            opacity: 0.7;
             transform: scale(1);
           }
           50% {
-            opacity: 0.7;
+            opacity: 0.95;
             transform: scale(1.02);
           }
         }
@@ -550,15 +643,38 @@ const ProcessingOverlay: React.FC<{
         }
         @keyframes skema-processing-border {
           0%, 100% {
-            border-color: rgba(139, 92, 246, 0.6);
+            border-color: rgba(139, 92, 246, 0.85);
           }
           50% {
             border-color: rgba(139, 92, 246, 1);
           }
         }
-        @keyframes skema-processing-spinner {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+        
+        /* Shape loader animations */
+        .skema-shape {
+          opacity: 0;
+          transform: scale(0.5) rotate(-180deg);
+          animation: skema-shape-cycle 2.5s ease-in-out infinite;
+        }
+        .skema-shape-1 { animation-delay: 0s; }
+        .skema-shape-2 { animation-delay: 0.5s; }
+        .skema-shape-3 { animation-delay: 1s; }
+        .skema-shape-4 { animation-delay: 1.5s; }
+        .skema-shape-5 { animation-delay: 2s; }
+        
+        @keyframes skema-shape-cycle {
+          0%, 100% {
+            opacity: 0;
+            transform: scale(0.5) rotate(-180deg);
+          }
+          10%, 30% {
+            opacity: 1;
+            transform: scale(1) rotate(0deg);
+          }
+          40% {
+            opacity: 0;
+            transform: scale(0.5) rotate(180deg);
+          }
         }
       `}</style>
       <div
@@ -569,12 +685,12 @@ const ProcessingOverlay: React.FC<{
           top: viewportY,
           width: boundingBox.width,
           height: boundingBox.height,
-          border: '2px solid rgba(139, 92, 246, 0.8)',
+          border: '3px solid rgba(139, 92, 246, 0.95)',
           borderRadius: 4,
           pointerEvents: 'none',
           zIndex: 999998,
           animation: 'skema-processing-pulse 1.5s ease-in-out infinite, skema-processing-border 1.5s ease-in-out infinite',
-          background: 'linear-gradient(90deg, transparent 0%, rgba(139, 92, 246, 0.1) 50%, transparent 100%)',
+          background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.35) 50%, rgba(139, 92, 246, 0.15) 100%)',
           backgroundSize: '200% 100%',
         }}
       >
@@ -583,50 +699,29 @@ const ProcessingOverlay: React.FC<{
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%)',
+            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.25) 50%, transparent 100%)',
             backgroundSize: '200% 100%',
             animation: 'skema-processing-shimmer 2s linear infinite',
             borderRadius: 2,
           }}
         />
-        {/* Loading indicator badge */}
+        {/* Loading indicator badge with animated shapes */}
         <div
           style={{
             position: 'absolute',
-            top: -12,
+            top: -18,
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '4px 10px',
-            backgroundColor: '#8B5CF6',
-            borderRadius: 12,
-            boxShadow: '0 2px 8px rgba(139, 92, 246, 0.4)',
+            justifyContent: 'center',
+            padding: '8px 14px',
+            backgroundColor: '#FFFFFF',
+            borderRadius: 20,
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08)',
           }}
         >
-          {/* Spinner */}
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              borderTopColor: 'white',
-              borderRadius: '50%',
-              animation: 'skema-processing-spinner 0.8s linear infinite',
-            }}
-          />
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 500,
-              color: 'white',
-              fontFamily: '"Clash Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Applying changes...
-          </span>
+          <ShapeLoader />
         </div>
       </div>
     </>
@@ -774,6 +869,7 @@ export const Skema: React.FC<SkemaProps> = ({
   onAnnotationsChange,
   onAnnotationSubmit,
   onAnnotationDelete,
+  onProcessingCancel,
   toggleShortcut = 'mod+shift+e',
   initialAnnotations = [],
   zIndex = 99999,
@@ -786,11 +882,22 @@ export const Skema: React.FC<SkemaProps> = ({
   const [pendingExiting, setPendingExiting] = useState(false);
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [processingBoundingBox, setProcessingBoundingBox] = useState<BoundingBox | null>(null);
+  const [scribbleToast, setScribbleToast] = useState<string | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const popupRef = useRef<AnnotationPopupHandle>(null);
   const lastDoubleClickRef = useRef<number>(0);
   const justFinishedDrawingRef = useRef<boolean>(false);
   const cleanupRef = useRef<(() => void) | null>(null);
+  
+  // Scribble detection refs - for real-time tracking during drawing
+  const scribblePointsRef = useRef<GesturePoint[]>([]);
+  const isDrawingRef = useRef<boolean>(false);
+  const scribbleDetectedRef = useRef<boolean>(false);
+  
+  // Saved shapes for hide/restore when toggling Skema off/on
+  // Stores shape data when user presses Cmd+Shift+E to hide overlay
+  const savedShapesRef = useRef<Record<string, any> | null>(null);
+  const wasActiveRef = useRef<boolean>(isActive);
 
   // Handle keyboard shortcut to toggle
   useEffect(() => {
@@ -805,6 +912,71 @@ export const Skema: React.FC<SkemaProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // =============================================================================
+  // Hide/Restore Drawings When Toggling Skema Off/On
+  // =============================================================================
+  // When user presses Cmd+Shift+E to hide Skema, save all drawings to memory
+  // and remove them from canvas. When Skema is shown again, restore them.
+  
+  useEffect(() => {
+    const editor = editorRef.current;
+    
+    // Detect transition from active to inactive (hiding Skema)
+    if (wasActiveRef.current && !isActive && editor) {
+      // Get all drawing shapes on the canvas
+      const allShapes = editor.getCurrentPageShapes();
+      const drawingShapes = allShapes.filter(shape => 
+        ['draw', 'line', 'arrow', 'geo', 'text', 'note', 'frame'].includes(shape.type)
+      );
+      
+      if (drawingShapes.length > 0) {
+        // Save the current store snapshot (only shapes we care about)
+        const shapeRecords: Record<string, any> = {};
+        for (const shape of drawingShapes) {
+          shapeRecords[shape.id] = shape;
+        }
+        savedShapesRef.current = shapeRecords;
+        
+        // Delete the shapes from canvas (they're now hidden)
+        const shapeIds = drawingShapes.map(s => s.id);
+        editor.deleteShapes(shapeIds);
+        
+        console.log(`[Skema] Hiding: saved ${drawingShapes.length} shape(s) to memory`);
+      }
+    }
+    
+    // Update the ref for next comparison
+    wasActiveRef.current = isActive;
+  }, [isActive]);
+  
+  // Restore shapes when Skema becomes active again (after editor is mounted)
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const editor = editorRef.current;
+    if (!editor || !savedShapesRef.current) return;
+    
+    // Small delay to ensure editor is fully ready after mount
+    const timeoutId = setTimeout(() => {
+      const savedShapes = savedShapesRef.current;
+      if (!savedShapes || !editorRef.current) return;
+      
+      const editor = editorRef.current;
+      const shapesToRestore = Object.values(savedShapes);
+      
+      if (shapesToRestore.length > 0) {
+        // Restore shapes to the canvas
+        editor.createShapes(shapesToRestore);
+        console.log(`[Skema] Restoring: loaded ${shapesToRestore.length} shape(s) from memory`);
+        
+        // Clear saved shapes after restore
+        savedShapesRef.current = null;
+      }
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
+  }, [isActive]);
 
   // Track scroll position to sync tldraw camera with page
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
@@ -1236,14 +1408,23 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     }, 150);
   }, [pendingAnnotation, onAnnotationSubmit]);
 
-  // Cancel annotation popup
+  // Cancel annotation popup and any in-progress processing
   const handleAnnotationCancel = useCallback(() => {
     setPendingExiting(true);
+    
+    // If processing is active, cancel it
+    if (isProcessing) {
+      onProcessingCancel?.();
+    }
+    
+    // Always clear the processing bounding box on cancel
+    setProcessingBoundingBox(null);
+    
     setTimeout(() => {
       setPendingAnnotation(null);
       setPendingExiting(false);
     }, 150);
-  }, []);
+  }, [isProcessing, onProcessingCancel]);
 
   // Delete an annotation (when clicking on marker)
   const handleDeleteAnnotation = useCallback((annotation: Annotation) => {
@@ -1252,9 +1433,16 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       setDomSelections((prev) => prev.filter((s) => s.id !== annotation.id));
     }
     setHoveredMarkerId(null);
+    
+    // If processing is active, cancel it (user is deleting while processing)
+    if (isProcessing) {
+      onProcessingCancel?.();
+      setProcessingBoundingBox(null);
+    }
+    
     // Call the delete callback (for reverting Gemini changes)
     onAnnotationDelete?.(annotation.id);
-  }, [onAnnotationDelete]);
+  }, [onAnnotationDelete, isProcessing, onProcessingCancel]);
 
   // Clear all annotations
   const handleClear = useCallback(() => {
@@ -1696,6 +1884,140 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     // Users must manually select their drawings to annotate them
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
 
+  // =============================================================================
+  // Real-time Scribble-to-Delete Gesture Detection
+  // =============================================================================
+  // Track pointer events while draw tool is active to detect scribble gestures
+  // in real-time (before pen release) and delete shapes underneath.
+  
+  useEffect(() => {
+    if (!isActive) return;
+    
+    const handleScribbleDelete = (overlappingIds: TLShapeId[]) => {
+      const editor = editorRef.current;
+      if (!editor || overlappingIds.length === 0) return;
+      
+      // Cancel the current drawing operation
+      editor.cancel();
+      
+      // Delete overlapping shapes
+      editor.deleteShapes(overlappingIds);
+      
+      // Remove any annotations associated with deleted shapes
+      setAnnotations((prev) => prev.filter((annotation) => {
+        if (annotation.type === 'drawing') {
+          const drawingShapes = annotation.shapes as TLShapeId[];
+          return !drawingShapes.some((shapeId) => 
+            overlappingIds.includes(shapeId)
+          );
+        }
+        return true;
+      }));
+      
+      // Show toast notification
+      const message = overlappingIds.length === 1
+        ? 'Deleted 1 shape'
+        : `Deleted ${overlappingIds.length} shapes`;
+      setScribbleToast(message);
+      setTimeout(() => setScribbleToast(null), 2000);
+      
+      console.log(`[Skema] Scribble-delete: removed ${overlappingIds.length} shape(s)`);
+    };
+    
+    const handlePointerDown = (e: PointerEvent) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      
+      // Only track if draw tool is active
+      const currentTool = editor.getCurrentToolId();
+      if (currentTool !== 'draw') return;
+      
+      // Start tracking
+      isDrawingRef.current = true;
+      scribbleDetectedRef.current = false;
+      scribblePointsRef.current = [{ 
+        x: e.clientX + window.scrollX, 
+        y: e.clientY + window.scrollY 
+      }];
+    };
+    
+    const handlePointerMove = (e: PointerEvent) => {
+      const editor = editorRef.current;
+      if (!editor || !isDrawingRef.current || scribbleDetectedRef.current) return;
+      
+      // Only track if draw tool is still active and pointer is down
+      const currentTool = editor.getCurrentToolId();
+      if (currentTool !== 'draw') {
+        isDrawingRef.current = false;
+        return;
+      }
+      
+      // Add point (in page coordinates)
+      const newPoint = { 
+        x: e.clientX + window.scrollX, 
+        y: e.clientY + window.scrollY 
+      };
+      
+      const points = scribblePointsRef.current;
+      const lastPoint = points[points.length - 1];
+      
+      // Only add if moved enough (avoid duplicate points)
+      if (lastPoint) {
+        const dx = newPoint.x - lastPoint.x;
+        const dy = newPoint.y - lastPoint.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 3) return;
+      }
+      
+      points.push(newPoint);
+      scribblePointsRef.current = points;
+      
+      // Check for scribble gesture periodically (every 5 points after initial batch)
+      if (points.length >= 20 && points.length % 5 === 0) {
+        const gestureResult = isRealtimeScribble(points);
+        
+        if (gestureResult.isScribble) {
+          // Get bounds of the scribble path
+          const bounds = getPointsBounds(points);
+          
+          if (bounds) {
+            // Find shapes underneath the scribble
+            const overlappingIds = findOverlappingShapesFromBounds(editor, bounds, []);
+            
+            if (overlappingIds.length > 0) {
+              // Mark as detected to prevent re-triggering
+              scribbleDetectedRef.current = true;
+              isDrawingRef.current = false;
+              
+              // Trigger deletion
+              handleScribbleDelete(overlappingIds);
+            }
+          }
+        }
+      }
+    };
+    
+    const handlePointerUp = () => {
+      // Reset tracking state
+      isDrawingRef.current = false;
+      scribblePointsRef.current = [];
+      scribbleDetectedRef.current = false;
+    };
+    
+    // Add listeners with capture to track before tldraw
+    document.addEventListener('pointerdown', handlePointerDown, { capture: true });
+    document.addEventListener('pointermove', handlePointerMove, { capture: true });
+    document.addEventListener('pointerup', handlePointerUp, { capture: true });
+    document.addEventListener('pointercancel', handlePointerUp, { capture: true });
+    
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
+      document.removeEventListener('pointermove', handlePointerMove, { capture: true });
+      document.removeEventListener('pointerup', handlePointerUp, { capture: true });
+      document.removeEventListener('pointercancel', handlePointerUp, { capture: true });
+    };
+  }, [isActive]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -1950,6 +2272,45 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           marginRight: '4px',
         }}>⌘⇧E</kbd> to toggle Skema
       </div>
+
+      {/* Scribble-delete toast notification */}
+      {scribbleToast && (
+        <div
+          data-skema="scribble-toast"
+          style={{
+            position: 'fixed',
+            bottom: 60,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '10px 20px',
+            backgroundColor: 'rgba(239, 68, 68, 0.95)',
+            color: 'white',
+            borderRadius: '8px',
+            fontSize: '14px',
+            fontWeight: 500,
+            pointerEvents: 'none',
+            zIndex: zIndex + 10,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            animation: 'skema-toast-fade 0.2s ease-out',
+          }}
+        >
+          {scribbleToast}
+        </div>
+      )}
+
+      {/* Toast animation styles */}
+      <style>{`
+        @keyframes skema-toast-fade {
+          from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

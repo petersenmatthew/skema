@@ -485,24 +485,57 @@ Just FYI, this gets passed onto a generator to generate the actual code of moder
 }
 
 /**
+ * Options for createGeminiCLIStream with abort support
+ */
+interface StreamOptions extends GeminiCLIOptions {
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+  /** Callback when cancelled - for cleanup like reverting snapshots */
+  onCancel?: () => void;
+}
+
+/**
  * Create a streaming response for use in API routes (Next.js, Express, etc.)
  */
 export function createGeminiCLIStream(
   annotation: Partial<Annotation> & { comment?: string },
   projectContext?: ProjectContext,
-  options?: GeminiCLIOptions
+  options?: StreamOptions
 ): ReadableStream<Uint8Array> {
   // We need to handle the prompt building inside logic because it might be async now
   // But ReadableStream start controller can be async
   const encoder = new TextEncoder();
+  let geminiProcess: ChildProcess | null = null;
+  let isCancelled = false;
 
   return new ReadableStream({
     async start(controller) {
       const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
       let visionDescription = '';
+      
+      // Set up abort handler
+      if (options?.signal) {
+        options.signal.addEventListener('abort', () => {
+          isCancelled = true;
+          if (geminiProcess && !geminiProcess.killed) {
+            console.log('[Skema Server] Killing Gemini CLI process due to client disconnect');
+            geminiProcess.kill('SIGTERM');
+          }
+          // Call the onCancel callback for cleanup (like reverting snapshots)
+          options.onCancel?.();
+          try {
+            controller.close();
+          } catch {
+            // Controller may already be closed
+          }
+        });
+      }
 
       // Perform Image Analysis if needed for drawing annotations with images
       if (annotation.type === 'drawing' && (annotation as { drawingImage?: string }).drawingImage && apiKey) {
+        // Check if cancelled before vision analysis
+        if (isCancelled) return;
+        
         // Send a "progress" event to the client
         const progressEvent: GeminiCLIEvent = {
           type: 'message',
@@ -517,6 +550,9 @@ export function createGeminiCLIStream(
           (annotation as { drawingImage: string }).drawingImage,
           options?.model || 'gemini-2.5-flash'
         );
+        
+        // Check if cancelled after vision analysis
+        if (isCancelled) return;
 
         // Log the analysis result
         const analysisEvent: GeminiCLIEvent = {
@@ -527,6 +563,9 @@ export function createGeminiCLIStream(
         };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(analysisEvent)}\n\n`));
       }
+
+      // Check if cancelled before spawning CLI
+      if (isCancelled) return;
 
       const prompt = buildPromptFromAnnotation(
         annotation,
@@ -546,9 +585,13 @@ export function createGeminiCLIStream(
       };
       controller.enqueue(encoder.encode(`data: ${JSON.stringify(promptEvent)}\n\n`));
 
-      const { events } = spawnGeminiCLI(prompt, options);
+      const { process: proc, events } = spawnGeminiCLI(prompt, options);
+      geminiProcess = proc;
 
       for await (const event of events) {
+        // Check if cancelled during processing
+        if (isCancelled) break;
+        
         const sseData = `data: ${JSON.stringify(event)}\n\n`;
         controller.enqueue(encoder.encode(sseData));
 
@@ -558,6 +601,14 @@ export function createGeminiCLIStream(
         }
       }
     },
+    cancel() {
+      // Called when the stream is cancelled
+      isCancelled = true;
+      if (geminiProcess && !geminiProcess.killed) {
+        geminiProcess.kill('SIGTERM');
+      }
+      options?.onCancel?.();
+    }
   });
 }
 
@@ -648,6 +699,18 @@ export function createGeminiRouteHandler(defaultOptions?: GeminiCLIOptions) {
     const stream = createGeminiCLIStream(annotation, projectContext, {
       cwd,
       ...defaultOptions,
+      // Pass abort signal from request for client disconnect detection
+      signal: request.signal,
+      // Revert snapshot if client cancels/disconnects
+      onCancel: () => {
+        console.log(`[Skema Server] Client disconnected, reverting snapshot for: ${annotationId}`);
+        const result = revertAnnotation(annotationId, cwd);
+        if (result.success) {
+          console.log(`[Skema Server] Successfully reverted changes for: ${annotationId}`);
+        } else {
+          console.error(`[Skema Server] Failed to revert changes: ${result.message}`);
+        }
+      },
     });
 
     return new Response(stream, {
