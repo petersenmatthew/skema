@@ -526,6 +526,92 @@ const SelectionOverlay: React.FC<{ selections: DOMSelection[] }> = ({ selections
 // Processing Loading Overlay - Shows animation when changes are being made
 // =============================================================================
 
+// Animated shape loader component - cycles through colorful shapes
+const ShapeLoader: React.FC = () => {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: 28,
+        height: 28,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {/* Orange Star */}
+      <svg
+        className="skema-shape skema-shape-1"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <polygon
+          points="12,2 15,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9,9"
+          fill="#F97316"
+        />
+      </svg>
+      {/* Yellow Parallelogram */}
+      <svg
+        className="skema-shape skema-shape-2"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <polygon
+          points="6,4 22,4 18,20 2,20"
+          fill="#FACC15"
+        />
+      </svg>
+      {/* Red Triangle */}
+      <svg
+        className="skema-shape skema-shape-3"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <polygon
+          points="12,3 22,21 2,21"
+          fill="#EF4444"
+        />
+      </svg>
+      {/* Blue Circle */}
+      <svg
+        className="skema-shape skema-shape-4"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <circle cx="12" cy="12" r="10" fill="#3B82F6" />
+      </svg>
+      {/* Green Square */}
+      <svg
+        className="skema-shape skema-shape-5"
+        viewBox="0 0 24 24"
+        style={{
+          position: 'absolute',
+          width: 24,
+          height: 24,
+        }}
+      >
+        <rect x="3" y="3" width="18" height="18" fill="#22C55E" />
+      </svg>
+    </div>
+  );
+};
+
 const ProcessingOverlay: React.FC<{
   boundingBox: BoundingBox;
   scrollOffset: { x: number; y: number };
@@ -563,9 +649,32 @@ const ProcessingOverlay: React.FC<{
             border-color: rgba(139, 92, 246, 1);
           }
         }
-        @keyframes skema-processing-spinner {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
+        
+        /* Shape loader animations */
+        .skema-shape {
+          opacity: 0;
+          transform: scale(0.5) rotate(-180deg);
+          animation: skema-shape-cycle 2.5s ease-in-out infinite;
+        }
+        .skema-shape-1 { animation-delay: 0s; }
+        .skema-shape-2 { animation-delay: 0.5s; }
+        .skema-shape-3 { animation-delay: 1s; }
+        .skema-shape-4 { animation-delay: 1.5s; }
+        .skema-shape-5 { animation-delay: 2s; }
+        
+        @keyframes skema-shape-cycle {
+          0%, 100% {
+            opacity: 0;
+            transform: scale(0.5) rotate(-180deg);
+          }
+          10%, 30% {
+            opacity: 1;
+            transform: scale(1) rotate(0deg);
+          }
+          40% {
+            opacity: 0;
+            transform: scale(0.5) rotate(180deg);
+          }
         }
       `}</style>
       <div
@@ -596,44 +705,23 @@ const ProcessingOverlay: React.FC<{
             borderRadius: 2,
           }}
         />
-        {/* Loading indicator badge */}
+        {/* Loading indicator badge with animated shapes */}
         <div
           style={{
             position: 'absolute',
-            top: -12,
+            top: -18,
             left: '50%',
             transform: 'translateX(-50%)',
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
-            padding: '4px 10px',
-            backgroundColor: '#8B5CF6',
-            borderRadius: 12,
-            boxShadow: '0 2px 8px rgba(139, 92, 246, 0.4)',
+            justifyContent: 'center',
+            padding: '8px 14px',
+            backgroundColor: '#FFFFFF',
+            borderRadius: 20,
+            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08)',
           }}
         >
-          {/* Spinner */}
-          <div
-            style={{
-              width: 12,
-              height: 12,
-              border: '2px solid rgba(255, 255, 255, 0.3)',
-              borderTopColor: 'white',
-              borderRadius: '50%',
-              animation: 'skema-processing-spinner 0.8s linear infinite',
-            }}
-          />
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 500,
-              color: 'white',
-              fontFamily: '"Clash Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Applying changes...
-          </span>
+          <ShapeLoader />
         </div>
       </div>
     </>
