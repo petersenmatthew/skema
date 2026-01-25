@@ -33,12 +33,12 @@ export default function OverviewPage() {
           {/* What is Skema */}
           <section className="mb-20">
             <p className="leading-relaxed text-lg text-muted-foreground">
-              <ThemedLogo className="inline-block h-6 w-auto align-middle" /> is a React component library that provides a tldraw-powered drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
+              <ThemedLogo className="inline-block h-6 w-auto align-middle" /> is an <a href="https://www.npmjs.com/package/skema-core" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground no-underline transition-opacity hover:opacity-70">npm package</a> that provides a tldraw-powered drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
             </p>
             <p className="mt-4 leading-relaxed text-lg text-muted-foreground">
-              We made website development drawable. Scribble on your localhost like a whiteboard,
-              point at what bothers you, and let AI do the actual coding part.
-              Because explaining "the button should be 50% left" is way harder than just... moving it.
+              <strong className="text-foreground">We made website development drawable.</strong> Scribble on your localhost like a whiteboard,
+              point at what bothers you, and connect directly to AI coding agents.
+              Because explaining which "the button should be 50% left" is way harder than just... moving it.
             </p>
           </section>
 
@@ -89,6 +89,9 @@ export default function OverviewPage() {
           </section>
         </div>
       </main>
+      <p className="pb-12 text-center text-xs text-muted-foreground">
+        Made by Matthew Petersen & Justin Wu
+      </p>
     </div>
   )
 }

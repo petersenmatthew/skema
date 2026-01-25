@@ -62,7 +62,7 @@ const styles = {
     boxShadow: '0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08)',
     cursor: 'default',
     zIndex: 100001,
-    fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    fontFamily: '"Clash Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     opacity: 0,
     transition: 'opacity 0.2s ease, transform 0.2s ease',
   },

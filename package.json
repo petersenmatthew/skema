@@ -7,8 +7,8 @@
     "packages/skema-example"
   ],
   "scripts": {
-    "dev": "bun run --filter skema-core watch & bun run --filter skema-example dev",
+    "dev": "bun run build && (bun run --filter skema-core watch & bun run --filter skema-example dev)",
     "build": "bun run --filter skema-core build",
-    "example": "bun run --filter skema-example dev"
+    "example": "bun run build && bun run --filter skema-example dev"
   }
 }

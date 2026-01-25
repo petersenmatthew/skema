@@ -111,7 +111,7 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
           justifyContent: 'center',
           fontSize: 11,
           fontWeight: 600,
-          fontFamily: 'system-ui, -apple-system, sans-serif',
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
           cursor: 'pointer',
           boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
           transition: 'all 0.15s ease',
@@ -621,7 +621,7 @@ const ProcessingOverlay: React.FC<{
               fontSize: 11,
               fontWeight: 500,
               color: 'white',
-              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontFamily: '"Clash Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
               whiteSpace: 'nowrap',
             }}
           >
