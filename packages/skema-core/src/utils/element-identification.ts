@@ -3,7 +3,7 @@
 // Adapted from Agentation with modifications for Skema
 // =============================================================================
 
-import type { BoundingBox, DOMSelection } from '../types';
+import type { BoundingBox, DOMSelection, ElementStyles, NearbyElement, ProjectStyleContext } from '../types';
 
 /**
  * Generates a unique CSS selector for an element
@@ -242,10 +242,299 @@ export function shouldIgnoreElement(element: HTMLElement): boolean {
   // Ignore Skema's own elements
   if (element.closest('[data-skema]')) return true;
   if (element.closest('.tl-container')) return true;
-  
+
   // Ignore script and style tags
   const tag = element.tagName.toLowerCase();
   if (['script', 'style', 'noscript', 'meta', 'link'].includes(tag)) return true;
-  
+
+  // Ignore broad container elements (too broad for annotation)
+  if (tag === 'section' || tag === 'main' || tag === 'body' || tag === 'html') return true;
+
   return false;
+}
+
+// =============================================================================
+// Style Extraction Utilities
+// =============================================================================
+
+/**
+ * Extract computed styles from an element for style matching
+ */
+export function getComputedElementStyles(element: HTMLElement): ElementStyles {
+  const computed = window.getComputedStyle(element);
+
+  return {
+    // Typography
+    fontFamily: computed.fontFamily,
+    fontSize: computed.fontSize,
+    fontWeight: computed.fontWeight,
+    lineHeight: computed.lineHeight,
+    letterSpacing: computed.letterSpacing !== 'normal' ? computed.letterSpacing : undefined,
+    textAlign: computed.textAlign !== 'start' ? computed.textAlign : undefined,
+    color: computed.color,
+    // Spacing
+    padding: computed.padding !== '0px' ? computed.padding : undefined,
+    margin: computed.margin !== '0px' ? computed.margin : undefined,
+    gap: computed.gap !== 'normal' ? computed.gap : undefined,
+    // Layout
+    display: computed.display,
+    flexDirection: computed.flexDirection !== 'row' ? computed.flexDirection : undefined,
+    alignItems: computed.alignItems !== 'normal' ? computed.alignItems : undefined,
+    justifyContent: computed.justifyContent !== 'normal' ? computed.justifyContent : undefined,
+    // Visual
+    backgroundColor: computed.backgroundColor !== 'rgba(0, 0, 0, 0)' ? computed.backgroundColor : undefined,
+    borderRadius: computed.borderRadius !== '0px' ? computed.borderRadius : undefined,
+    border: computed.border !== 'none' && computed.borderWidth !== '0px' ? computed.border : undefined,
+    boxShadow: computed.boxShadow !== 'none' ? computed.boxShadow : undefined,
+    // Sizing
+    width: computed.width,
+    height: computed.height,
+    maxWidth: computed.maxWidth !== 'none' ? computed.maxWidth : undefined,
+  };
+}
+
+/**
+ * Extract Tailwind classes from an element's className
+ */
+export function extractTailwindClasses(element: HTMLElement): string[] | undefined {
+  const className = element.className;
+  if (typeof className !== 'string' || !className) return undefined;
+
+  // Common Tailwind class patterns
+  const tailwindPatterns = [
+    /^(flex|grid|block|inline|hidden)$/,
+    /^(flex|grid|items|justify|gap|space|p|m|px|py|mx|my|pt|pb|pl|pr|mt|mb|ml|mr)-/,
+    /^(w|h|min-w|min-h|max-w|max-h)-/,
+    /^(text|font|leading|tracking|bg|border|rounded|shadow|opacity)-/,
+    /^(sm|md|lg|xl|2xl):/,
+    /^(hover|focus|active|disabled):/,
+    /^(dark|light):/,
+  ];
+
+  const classes = className.split(/\s+/).filter(c =>
+    tailwindPatterns.some(pattern => pattern.test(c))
+  );
+
+  return classes.length > 0 ? classes : undefined;
+}
+
+/**
+ * Create a NearbyElement with computed styles
+ */
+export function createNearbyElement(element: HTMLElement): NearbyElement {
+  return {
+    selector: generateSelector(element),
+    tagName: element.tagName.toLowerCase(),
+    text: element.textContent?.trim().slice(0, 100),
+    styles: getComputedElementStyles(element),
+    tailwindClasses: extractTailwindClasses(element),
+  };
+}
+
+/**
+ * Detect which CSS framework is being used in the project
+ */
+export function detectCSSFramework(): ProjectStyleContext['cssFramework'] {
+  // Check for Tailwind
+  const hasTailwind = document.querySelector('[class*="flex"]') !== null ||
+    document.querySelector('[class*="grid-"]') !== null ||
+    document.querySelector('[class*="text-"]') !== null ||
+    document.querySelector('[class*="bg-"]') !== null ||
+    // Check for Tailwind's reset stylesheet
+    document.querySelector('style[data-precedence]') !== null;
+
+  if (hasTailwind) {
+    // Double check with more specific Tailwind patterns
+    const allClasses = Array.from(document.querySelectorAll('[class]'))
+      .slice(0, 50)
+      .flatMap(el => {
+        const className = el.className;
+        if (typeof className !== 'string') return [];
+        return className.split(/\s+/);
+      });
+
+    const tailwindIndicators = allClasses.filter(c =>
+      /^(flex|grid|block|inline-block|hidden|p-|m-|px-|py-|mx-|my-|w-|h-|text-|bg-|border-|rounded-|shadow-|gap-)/.test(c)
+    );
+
+    if (tailwindIndicators.length > 5) {
+      return 'tailwind';
+    }
+  }
+
+  // Check for CSS Modules (classes with hash suffixes)
+  const hasModuleClasses = Array.from(document.querySelectorAll('[class]'))
+    .slice(0, 20)
+    .some(el => {
+      const className = el.className;
+      if (typeof className !== 'string') return false;
+      return /[a-zA-Z]+_[a-zA-Z0-9]{5,}/.test(className);
+    });
+
+  if (hasModuleClasses) {
+    return 'css-modules';
+  }
+
+  // Check for styled-components (data-styled attribute)
+  if (document.querySelector('[data-styled]') !== null ||
+      document.querySelector('style[data-styled-components]') !== null) {
+    return 'styled-components';
+  }
+
+  return 'vanilla';
+}
+
+/**
+ * Extract CSS custom properties (design tokens) from :root
+ */
+export function extractCSSVariables(): Record<string, string> | undefined {
+  const variables: Record<string, string> = {};
+
+  try {
+    const rootStyles = getComputedStyle(document.documentElement);
+
+    // Get all stylesheets and look for :root rules
+    for (const sheet of document.styleSheets) {
+      try {
+        const rules = sheet.cssRules || sheet.rules;
+        for (const rule of rules) {
+          if (rule instanceof CSSStyleRule && rule.selectorText === ':root') {
+            for (let i = 0; i < rule.style.length; i++) {
+              const prop = rule.style[i];
+              if (prop.startsWith('--')) {
+                variables[prop] = rule.style.getPropertyValue(prop).trim();
+              }
+            }
+          }
+        }
+      } catch {
+        // Cross-origin stylesheets will throw
+      }
+    }
+
+    // Also check inline styles on html element
+    const htmlStyle = document.documentElement.getAttribute('style');
+    if (htmlStyle) {
+      const matches = htmlStyle.matchAll(/--([a-zA-Z0-9-]+)\s*:\s*([^;]+)/g);
+      for (const match of matches) {
+        variables[`--${match[1]}`] = match[2].trim();
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+
+  return Object.keys(variables).length > 0 ? variables : undefined;
+}
+
+/**
+ * Extract common colors used on the page
+ */
+export function extractColorPalette(): string[] | undefined {
+  const colors = new Set<string>();
+  const elements = document.querySelectorAll('*');
+
+  // Sample first 100 elements to avoid performance issues
+  const sampleSize = Math.min(elements.length, 100);
+
+  for (let i = 0; i < sampleSize; i++) {
+    const el = elements[i] as HTMLElement;
+    if (shouldIgnoreElement(el)) continue;
+
+    const computed = window.getComputedStyle(el);
+
+    // Collect background colors (skip transparent)
+    if (computed.backgroundColor && computed.backgroundColor !== 'rgba(0, 0, 0, 0)') {
+      colors.add(computed.backgroundColor);
+    }
+
+    // Collect text colors
+    if (computed.color) {
+      colors.add(computed.color);
+    }
+
+    // Collect border colors
+    if (computed.borderColor && computed.borderColor !== 'rgb(0, 0, 0)') {
+      colors.add(computed.borderColor);
+    }
+  }
+
+  // Return unique colors (limit to 20)
+  const uniqueColors = Array.from(colors).slice(0, 20);
+  return uniqueColors.length > 0 ? uniqueColors : undefined;
+}
+
+/**
+ * Extract comprehensive project style context
+ */
+export function extractProjectStyleContext(): ProjectStyleContext {
+  const bodyStyles = window.getComputedStyle(document.body);
+  const htmlStyles = window.getComputedStyle(document.documentElement);
+
+  return {
+    cssFramework: detectCSSFramework(),
+    cssVariables: extractCSSVariables(),
+    colorPalette: extractColorPalette(),
+    baseFontFamily: bodyStyles.fontFamily,
+    baseFontSize: htmlStyles.fontSize,
+  };
+}
+
+/**
+ * Find DOM elements near a bounding box and extract their style context
+ */
+export function findNearbyElementsWithStyles(
+  bounds: BoundingBox,
+  maxElements: number = 5
+): NearbyElement[] {
+  const elements: Array<{ element: HTMLElement; distance: number }> = [];
+  const allElements = document.querySelectorAll('*');
+
+  const boundsCenter = {
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2,
+  };
+
+  allElements.forEach((el) => {
+    if (!(el instanceof HTMLElement)) return;
+    if (shouldIgnoreElement(el)) return;
+
+    const rect = el.getBoundingClientRect();
+    // Skip very small elements
+    if (rect.width < 10 || rect.height < 10) return;
+
+    const elCenter = {
+      x: rect.left + window.scrollX + rect.width / 2,
+      y: rect.top + window.scrollY + rect.height / 2,
+    };
+
+    // Calculate distance from bounds center to element center
+    const distance = Math.sqrt(
+      Math.pow(boundsCenter.x - elCenter.x, 2) +
+      Math.pow(boundsCenter.y - elCenter.y, 2)
+    );
+
+    // Only include elements within reasonable distance (500px)
+    if (distance < 500) {
+      elements.push({ element: el, distance });
+    }
+  });
+
+  // Sort by distance and take closest elements
+  elements.sort((a, b) => a.distance - b.distance);
+
+  // Filter to get diverse elements (different types)
+  const seen = new Set<string>();
+  const diverse: HTMLElement[] = [];
+
+  for (const { element } of elements) {
+    const key = `${element.tagName}-${element.className}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      diverse.push(element);
+      if (diverse.length >= maxElements) break;
+    }
+  }
+
+  return diverse.map(createNearbyElement);
 }

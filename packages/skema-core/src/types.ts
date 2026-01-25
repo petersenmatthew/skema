@@ -86,6 +86,67 @@ export interface ViewportInfo {
 }
 
 /**
+ * Computed styles extracted from an element
+ */
+export interface ElementStyles {
+  // Typography
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: string;
+  lineHeight?: string;
+  letterSpacing?: string;
+  textAlign?: string;
+  color?: string;
+  // Spacing
+  padding?: string;
+  margin?: string;
+  gap?: string;
+  // Layout
+  display?: string;
+  flexDirection?: string;
+  alignItems?: string;
+  justifyContent?: string;
+  // Visual
+  backgroundColor?: string;
+  borderRadius?: string;
+  border?: string;
+  boxShadow?: string;
+  // Sizing
+  width?: string;
+  height?: string;
+  maxWidth?: string;
+}
+
+/**
+ * Enhanced nearby element with computed styles
+ */
+export interface NearbyElement {
+  selector: string;
+  tagName: string;
+  text?: string;
+  /** Computed CSS styles for style matching */
+  styles?: ElementStyles;
+  /** Tailwind classes if present */
+  tailwindClasses?: string[];
+}
+
+/**
+ * Project style context extracted from the page
+ */
+export interface ProjectStyleContext {
+  /** Detected CSS framework (tailwind, css-modules, styled-components, vanilla) */
+  cssFramework?: 'tailwind' | 'css-modules' | 'styled-components' | 'vanilla' | 'unknown';
+  /** CSS custom properties (design tokens) from :root */
+  cssVariables?: Record<string, string>;
+  /** Common color palette extracted from the page */
+  colorPalette?: string[];
+  /** Base font family used on the page */
+  baseFontFamily?: string;
+  /** Base font size (usually from html/body) */
+  baseFontSize?: string;
+}
+
+/**
  * Drawing annotation from tldraw
  */
 export interface DrawingAnnotation {
@@ -110,12 +171,12 @@ export interface DrawingAnnotation {
     size: number;
     labels: boolean;
   };
-  /** Nearby DOM elements that the drawing may relate to */
-  nearbyElements?: Array<{
-    selector: string;
-    tagName: string;
-    text?: string;
-  }>;
+  /** Nearby DOM elements with computed styles for context */
+  nearbyElements?: NearbyElement[];
+  /** Viewport dimensions for relative sizing */
+  viewport?: ViewportInfo;
+  /** Project-level style context */
+  projectStyles?: ProjectStyleContext;
 }
 
 /**

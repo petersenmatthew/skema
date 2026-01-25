@@ -23,7 +23,12 @@ import 'tldraw/tldraw.css';
 import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotation } from '../types';
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
-import { createDOMSelection, shouldIgnoreElement } from '../utils/element-identification';
+import {
+  createDOMSelection,
+  shouldIgnoreElement,
+  findNearbyElementsWithStyles,
+  extractProjectStyleContext,
+} from '../utils/element-identification';
 import { AnnotationPopup, AnnotationPopupHandle } from './AnnotationPopup';
 import { blobToBase64, addGridToSvg, extractTextFromShapes } from '../lib/utils';
 
@@ -1027,8 +1032,11 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         let extractedText: string | undefined;
         const gridConfig = { color: '#0066FF', size: 100, labels: true };
 
+        console.log('[Skema] Drawing annotation - shapeIds:', pendingAnnotation.shapeIds);
+
         if (editor && pendingAnnotation.shapeIds && pendingAnnotation.shapeIds.length > 0) {
           const shapeIds = pendingAnnotation.shapeIds as TLShapeId[];
+          console.log('[Skema] Exporting', shapeIds.length, 'shapes for image...');
 
           try {
             // Get SVG export of the drawing shapes
@@ -1039,6 +1047,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
             if (svgResult?.svg) {
               // Add grid overlay to SVG for positioning reference
               drawingSvg = addGridToSvg(svgResult.svg, gridConfig);
+              console.log('[Skema] SVG export successful');
             }
           } catch (e) {
             console.warn('[Skema] Failed to export drawing SVG:', e);
@@ -1051,8 +1060,10 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
               padding: 20,
               background: true,
             });
+            console.log('[Skema] toImage result:', imageResult ? 'got result' : 'null', imageResult?.blob ? 'has blob' : 'no blob');
             if (imageResult?.blob) {
               drawingImage = await blobToBase64(imageResult.blob);
+              console.log('[Skema] Image export successful, base64 length:', drawingImage?.length);
             }
           } catch (e) {
             console.warn('[Skema] Failed to export drawing image:', e);
@@ -1067,12 +1078,16 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           }
         }
 
-        // Get nearby DOM elements for context
-        const nearbyElements = pendingAnnotation.selections?.map(s => ({
-          selector: s.selector,
-          tagName: s.tagName,
-          text: s.text?.slice(0, 100),
-        })) || [];
+        // Get nearby DOM elements with computed styles for context
+        const nearbyElements = pendingAnnotation.boundingBox
+          ? findNearbyElementsWithStyles(pendingAnnotation.boundingBox, 5)
+          : [];
+
+        // Get project-level style context (CSS framework, design tokens, etc.)
+        const projectStyles = extractProjectStyleContext();
+
+        // Get viewport info for relative sizing context
+        const viewport = getViewportInfo();
 
         submittedAnnotation = {
           id: `drawing-${Date.now()}`,
@@ -1087,6 +1102,8 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           extractedText: extractedText || undefined,
           gridConfig,
           nearbyElements,
+          viewport,
+          projectStyles,
         };
       }
 
@@ -1513,56 +1530,8 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       return;
     });
 
-    // Track when drawing is complete to show annotation popup
-    // We track shapes created during a drawing session and show popup when drawing ends
-    let shapesCreatedThisSession: TLShapeId[] = [];
-    let isDrawing = false;
-    let drawingCheckTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    // Listen for new shape creation
-    editor.sideEffects.registerAfterCreateHandler('shape', (shape) => {
-      // Check if this is a drawing shape
-      if (['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)) {
-        shapesCreatedThisSession.push(shape.id);
-        isDrawing = true;
-      }
-    });
-
-    // Handle pointer up on the canvas to detect drawing completion
-    const handlePointerUp = (e: PointerEvent) => {
-      // Only process if we were drawing
-      if (!isDrawing || shapesCreatedThisSession.length === 0) return;
-
-      // Clear any pending check
-      if (drawingCheckTimeout) {
-        clearTimeout(drawingCheckTimeout);
-      }
-
-      // Wait a moment to ensure the drawing is fully complete
-      drawingCheckTimeout = setTimeout(() => {
-        if (shapesCreatedThisSession.length > 0) {
-          const shapeIds = [...shapesCreatedThisSession];
-          shapesCreatedThisSession = [];
-          isDrawing = false;
-
-          // Verify shapes exist and show popup
-          const validIds = shapeIds.filter(id => editor.getShape(id));
-          if (validIds.length > 0) {
-            handleDrawingAnnotation(validIds as TLShapeId[]);
-          }
-        }
-      }, 200);
-    };
-
-    document.addEventListener('pointerup', handlePointerUp);
-
-    // Store cleanup function in ref for component unmount
-    cleanupRef.current = () => {
-      document.removeEventListener('pointerup', handlePointerUp);
-      if (drawingCheckTimeout) {
-        clearTimeout(drawingCheckTimeout);
-      }
-    };
+    // Note: Auto-select after drawing is disabled
+    // Users must manually select their drawings to annotate them
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
 
   // Cleanup on unmount

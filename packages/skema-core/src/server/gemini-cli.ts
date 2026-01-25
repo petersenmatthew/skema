@@ -233,7 +233,21 @@ function buildDrawingPrompt(
     drawingImage?: string;
     extractedText?: string;
     gridConfig?: { color: string; size: number; labels: boolean };
-    nearbyElements?: Array<{ selector: string; tagName: string; text?: string }>;
+    nearbyElements?: Array<{
+      selector: string;
+      tagName: string;
+      text?: string;
+      styles?: Record<string, string | undefined>;
+      tailwindClasses?: string[];
+    }>;
+    viewport?: { width: number; height: number; scrollX: number; scrollY: number };
+    projectStyles?: {
+      cssFramework?: string;
+      cssVariables?: Record<string, string>;
+      colorPalette?: string[];
+      baseFontFamily?: string;
+      baseFontSize?: string;
+    };
     comment?: string;
   };
 
@@ -241,34 +255,103 @@ function buildDrawingPrompt(
   const hasImage = !!drawingAnnotation.drawingImage;
   const extractedText = drawingAnnotation.extractedText;
   const nearbyElements = drawingAnnotation.nearbyElements || [];
+  const viewport = drawingAnnotation.viewport || projectContext?.viewport;
+  const projectStyles = drawingAnnotation.projectStyles;
   const comment = drawingAnnotation.comment || 'Create a component based on this drawing';
   const gridSize = drawingAnnotation.gridConfig?.size || 100;
 
-  // Calculate grid cell reference for positioning
+  // Calculate precise positioning context
   let positionContext = '';
   let gridCellRef = '';
+  let sizeContext = '';
+
   if (bbox) {
     const col = Math.floor(bbox.x / gridSize);
     const row = Math.floor(bbox.y / gridSize);
     const colLabel = String.fromCharCode(65 + col); // 65 = 'A'
     gridCellRef = `${colLabel}${row}`;
-    positionContext = `**Position:** Grid cell ${gridCellRef} (${Math.round(bbox.x)}px, ${Math.round(bbox.y)}px) — ${Math.round(bbox.width)}×${Math.round(bbox.height)}px area`;
+
+    // Build detailed size/position context
+    positionContext = `**Position:** Grid cell ${gridCellRef} at (${Math.round(bbox.x)}px, ${Math.round(bbox.y)}px)`;
+
+    // Add viewport-relative sizing for accurate component dimensions
+    if (viewport) {
+      const widthPercent = ((bbox.width / viewport.width) * 100).toFixed(1);
+      const heightPercent = ((bbox.height / viewport.height) * 100).toFixed(1);
+      sizeContext = `**Size:** ${Math.round(bbox.width)}×${Math.round(bbox.height)}px (${widthPercent}% × ${heightPercent}% of viewport ${viewport.width}×${viewport.height})`;
+    } else {
+      sizeContext = `**Size:** ${Math.round(bbox.width)}×${Math.round(bbox.height)}px`;
+    }
   }
 
-  // Build nearby elements context
+  // Build enhanced nearby elements context with styles
   let nearbyContext = '';
   if (nearbyElements.length > 0) {
     const elementList = nearbyElements
       .slice(0, 5)
-      .map(el => `- <${el.tagName.toLowerCase()}>${el.text ? `: "${el.text.slice(0, 50)}"` : ''} (${el.selector})`)
+      .map(el => {
+        let desc = `- <${el.tagName.toLowerCase()}>`;
+        if (el.text) desc += `: "${el.text.slice(0, 40)}"`;
+
+        // Include Tailwind classes if present (for style matching)
+        if (el.tailwindClasses && el.tailwindClasses.length > 0) {
+          desc += `\n  Classes: \`${el.tailwindClasses.slice(0, 10).join(' ')}\``;
+        }
+
+        // Include key computed styles
+        if (el.styles) {
+          const keyStyles: string[] = [];
+          if (el.styles.fontSize) keyStyles.push(`font: ${el.styles.fontSize}`);
+          if (el.styles.color) keyStyles.push(`color: ${el.styles.color}`);
+          if (el.styles.backgroundColor) keyStyles.push(`bg: ${el.styles.backgroundColor}`);
+          if (el.styles.borderRadius) keyStyles.push(`radius: ${el.styles.borderRadius}`);
+          if (el.styles.padding) keyStyles.push(`padding: ${el.styles.padding}`);
+          if (keyStyles.length > 0) {
+            desc += `\n  Styles: ${keyStyles.join(', ')}`;
+          }
+        }
+
+        return desc;
+      })
       .join('\n');
-    nearbyContext = `\n**Nearby DOM Elements (for placement reference):**\n${elementList}`;
+    nearbyContext = `\n**Nearby Elements (match their styling):**\n${elementList}`;
+  }
+
+  // Build project style context
+  let styleContext = '';
+  if (projectStyles) {
+    const styleParts: string[] = [];
+
+    if (projectStyles.cssFramework) {
+      styleParts.push(`**CSS Framework:** ${projectStyles.cssFramework}`);
+    }
+
+    if (projectStyles.baseFontFamily) {
+      styleParts.push(`**Base Font:** ${projectStyles.baseFontFamily.split(',')[0]}`);
+    }
+
+    if (projectStyles.colorPalette && projectStyles.colorPalette.length > 0) {
+      // Show most common colors
+      styleParts.push(`**Color Palette:** ${projectStyles.colorPalette.slice(0, 6).join(', ')}`);
+    }
+
+    if (projectStyles.cssVariables && Object.keys(projectStyles.cssVariables).length > 0) {
+      const vars = Object.entries(projectStyles.cssVariables)
+        .slice(0, 8)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join('; ');
+      styleParts.push(`**CSS Variables:** ${vars}`);
+    }
+
+    if (styleParts.length > 0) {
+      styleContext = `\n\n## Project Style Context\n${styleParts.join('\n')}`;
+    }
   }
 
   // Build text extraction context
   let textContext = '';
   if (extractedText && extractedText.trim()) {
-    textContext = `\n**Text found in drawing (use as reference if hard to read):**\n${extractedText}`;
+    textContext = `\n**Text found in drawing:**\n${extractedText}`;
   }
 
   // Image reference note
@@ -280,38 +363,62 @@ function buildDrawingPrompt(
     imageNote += `\n\n## Visual Analysis of Drawing\n${visionDescription}`;
   }
 
-  // Construct the comprehensive prompt with Principal Front-End Engineer persona
-  const prompt = `You are a Principal Front-End Engineer with expertise in React and modern web development. Your task is to interpret a user's sketch/wireframe and create a polished, production-ready React component.
+  // Determine styling approach based on detected framework
+  const cssFramework = projectStyles?.cssFramework || 'unknown';
+  let stylingInstructions = '';
+
+  if (cssFramework === 'tailwind') {
+    stylingInstructions = `- **Use Tailwind CSS classes** to match the project's styling approach
+- Reference the nearby elements' classes for consistent spacing, colors, and typography
+- Use the same responsive breakpoints and patterns as existing components`;
+  } else if (cssFramework === 'css-modules') {
+    stylingInstructions = `- **Use CSS Modules** to match the project's styling approach
+- Create a companion .module.css file if needed
+- Follow the naming conventions of existing stylesheets`;
+  } else if (cssFramework === 'styled-components') {
+    stylingInstructions = `- **Use styled-components** to match the project's styling approach
+- Follow the patterns of existing styled components in the codebase`;
+  } else {
+    stylingInstructions = `- Use inline styles or the same CSS approach as nearby components
+- Match the styling patterns you see in the existing codebase`;
+  }
+
+  // Construct the comprehensive prompt
+  const prompt = `You are a Principal Front-End Engineer. Create a production-ready React component from this wireframe sketch that **precisely matches the size, position, and style** of the existing page.
 
 ## User's Request
 "${comment}"
 
 ## Drawing Context
-${positionContext}${textContext}${nearbyContext}${imageNote}
+${positionContext}
+${sizeContext}${textContext}${nearbyContext}${styleContext}${imageNote}
 
-## Your Process
-1. **Analyze the Sketch:** Understand the visual intent—what UI component does the user want?
-2. **Interpret, Don't Transcribe:** Elevate the low-fidelity drawing into a high-fidelity component. Choose appropriate spacing, colors, and typography that match modern design standards.
-3. **Infer Missing Details:** If something is underspecified, use your expertise to make the best choice. An informed decision is better than an incomplete component.
+## CRITICAL: Size & Position Accuracy
+The component MUST match these exact dimensions:
+- **Width:** ${bbox ? `${Math.round(bbox.width)}px` : 'as drawn'}${viewport ? ` (${((bbox!.width / viewport.width) * 100).toFixed(0)}% of viewport)` : ''}
+- **Height:** ${bbox ? `${Math.round(bbox.height)}px` : 'as drawn'}${viewport ? ` (${((bbox!.height / viewport.height) * 100).toFixed(0)}% of viewport)` : ''}
+- Position the component at approximately (${bbox ? `${Math.round(bbox.x)}px, ${Math.round(bbox.y)}px` : 'the drawn location'})
 
-## Implementation Guidelines
-- Create a React component with inline styles or Tailwind CSS classes
-- Match the approximate size and position (grid cell ${gridCellRef || 'as drawn'})
-- If the sketch shows:
-  - **Rectangle/box:** Card, container, button, or input field depending on context
-  - **Text elements:** Headings, paragraphs, or labels with appropriate hierarchy
-  - **Form layout:** Input fields with labels, proper spacing
-  - **Icons/shapes:** Use appropriate icons from lucide-react or inline SVGs
-  - **Navigation:** Nav links, menus, or breadcrumbs
-  - **Lists:** Ordered/unordered lists or grid layouts
-- Make the component fit naturally with the existing page design
-- Use semantic HTML and ARIA attributes where appropriate
+## CRITICAL: Style Matching
+The component MUST blend seamlessly with the existing page:
+${stylingInstructions}
+- Match the **exact colors, fonts, spacing, and border-radius** of nearby elements
+- Use the project's color palette and CSS variables where available
+- The component should look like it was always part of the page
+
+## Shape Interpretation
+- **Rectangle/box:** Card, container, button, or input field depending on context
+- **Text elements:** Headings, paragraphs, or labels with appropriate hierarchy
+- **Form layout:** Input fields with labels, proper spacing
+- **Icons/shapes:** Use lucide-react icons or inline SVGs
+- **Navigation:** Nav links, menus, or breadcrumbs
+- **Lists:** Ordered/unordered lists or grid layouts
 
 ## Annotations
-- Any **red marks** in the drawing are instructions—follow them but don't render them
+- **Red marks** are instructions—follow them but don't render them
 - Text annotations describe intent or constraints
 
-Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.
+Make the changes directly. Insert the component at the appropriate location. No explanation needed.
 NEVER modify next-env.d.ts.`;
 
   return prompt;
@@ -452,7 +559,20 @@ async function analyzeImageWithGemini(apiKey: string, base64Image: string, model
     ];
 
     const result = await model.generateContent([
-      "Analyze this UI wireframe sketch in extreme detail for a front-end developer. Describe every element, layout, spacing, icons, and text you see. Mention relative positions and hierarchy. Be distinct about what is drawn vs what might be background.",
+      `Interpret this UI wireframe as a front-end developer would. Focus on:
+
+1. **What UI component/pattern this represents** (e.g., "a navigation bar", "a card grid", "a form with 3 inputs")
+2. **Layout structure** - how elements are arranged (rows, columns, grid)
+3. **Spacing relationships** - relative gaps between elements
+4. **Any text content** - read and include all visible text/labels
+5. **Interactive elements** - buttons, inputs, links, icons
+
+DO NOT describe:
+- The drawing style or quality (hand-drawn, messy, sketchy, etc.)
+- Line thickness or stroke characteristics
+- Whether it looks rough or polished
+
+Just tell me WHAT this wireframe represents and HOW the elements are organized.`,
       ...imageParts,
     ]);
 
@@ -483,6 +603,11 @@ export function createGeminiCLIStream(
     async start(controller) {
       const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
       let visionDescription = '';
+
+      // Debug: Log what we received
+      console.log('[Skema Server] Annotation type:', annotation.type);
+      console.log('[Skema Server] Has drawingImage:', !!(annotation as any).drawingImage);
+      console.log('[Skema Server] Has apiKey:', !!apiKey);
 
       // Perform Image Analysis if needed
       if (annotation.type === 'drawing' && (annotation as any).drawingImage && apiKey) {
