@@ -1,5 +1,7 @@
 import { spawn, execSync, type ChildProcess } from 'child_process';
-import type { Annotation } from '../types';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import type { Annotation, NearbyElement, ProjectStyleContext, ViewportInfo } from '../types';
+import { getGridCellReference } from '../lib/utils';
 
 // Store annotation ID -> git stash ref for undo functionality
 const annotationSnapshots = new Map<string, string>();
@@ -106,7 +108,7 @@ export interface ProjectContext {
 }
 
 export interface GeminiCLIEvent {
-  type: 'init' | 'message' | 'tool_use' | 'tool_result' | 'error' | 'result' | 'done';
+  type: 'init' | 'message' | 'tool_use' | 'tool_result' | 'error' | 'result' | 'done' | 'debug';
   timestamp?: string;
   content?: string;
   role?: 'user' | 'assistant';
@@ -123,13 +125,13 @@ export interface GeminiCLIEvent {
 export function buildPromptFromAnnotation(
   annotation: Partial<Annotation> & { comment?: string },
   projectContext?: ProjectContext,
-  options?: { fastMode?: boolean }
+  options?: { fastMode?: boolean; visionDescription?: string }
 ): string {
   const fastMode = options?.fastMode ?? true;
 
   // Handle drawing annotations specially - they generate new components
   if (annotation.type === 'drawing') {
-    return buildDrawingPrompt(annotation, projectContext);
+    return buildDrawingPrompt(annotation, projectContext, options?.visionDescription);
   }
 
   // Fast mode: minimal prompt for quick changes
@@ -197,66 +199,114 @@ Element: `;
  */
 function buildDrawingPrompt(
   annotation: Partial<Annotation> & { comment?: string },
-  projectContext?: ProjectContext
+  projectContext?: ProjectContext,
+  visionDescription?: string
 ): string {
   const drawingAnnotation = annotation as {
     boundingBox?: { x: number; y: number; width: number; height: number };
     drawingSvg?: string;
-    nearbyElements?: Array<{ selector: string; tagName: string; text?: string }>;
+    drawingImage?: string;
+    extractedText?: string;
+    gridConfig?: { color: string; size: number; labels: boolean };
+    viewport?: ViewportInfo;
+    projectStyles?: ProjectStyleContext;
+    nearbyElements?: NearbyElement[];
     comment?: string;
   };
 
   const bbox = drawingAnnotation.boundingBox;
-  const svg = drawingAnnotation.drawingSvg;
   const nearbyElements = drawingAnnotation.nearbyElements || [];
+  const extractedText = drawingAnnotation.extractedText;
   const comment = drawingAnnotation.comment || 'Create a component based on this drawing';
+  const hasImage = !!drawingAnnotation.drawingImage;
+  const gridSize = drawingAnnotation.gridConfig?.size || 100;
 
-  // Build position context
-  let positionContext = '';
+  // Build grid cell reference for positioning
+  let gridCellRef = '';
   if (bbox) {
-    positionContext = `Position: ${Math.round(bbox.x)}px from left, ${Math.round(bbox.y)}px from top (${Math.round(bbox.width)}×${Math.round(bbox.height)}px area)`;
+    gridCellRef = getGridCellReference(bbox.x, bbox.y, gridSize);
   }
 
-  // Build nearby elements context
+  // Build position context - focus on relative positioning, not absolute values
+  let positionContext = '';
+  if (bbox && drawingAnnotation.viewport) {
+    const vp = drawingAnnotation.viewport;
+    const relX = ((bbox.x / vp.width) * 100).toFixed(1);
+    const relY = ((bbox.y / vp.height) * 100).toFixed(1);
+    positionContext = `**Drawing Location:** Approximately ${relX}% from left, ${relY}% from top of viewport`;
+    if (gridCellRef) {
+      positionContext += ` (grid cell ${gridCellRef})`;
+    }
+  } else if (bbox) {
+    positionContext = `**Drawing Area:** ${Math.round(bbox.width)}×${Math.round(bbox.height)}px`;
+  }
+
+  // Build nearby elements context with style info
   let nearbyContext = '';
   if (nearbyElements.length > 0) {
     const elementList = nearbyElements
       .slice(0, 5)
-      .map(el => `- <${el.tagName.toLowerCase()}>${el.text ? `: "${el.text.slice(0, 50)}"` : ''} (${el.selector})`)
+      .map(el => {
+        let desc = `- <${el.tagName.toLowerCase()}>`;
+        if (el.text) desc += `: "${el.text.slice(0, 50)}"`;
+        if (el.className) desc += ` (class: ${el.className.slice(0, 50)})`;
+        desc += ` (${el.selector})`;
+        return desc;
+      })
       .join('\n');
-    nearbyContext = `\nNearby DOM elements (for placement reference):\n${elementList}`;
+    nearbyContext = `\n**Nearby DOM Elements (for placement reference):**\n${elementList}`;
   }
 
-  // Build SVG context - include the actual drawing
-  let svgContext = '';
-  if (svg) {
-    // Clean up SVG for inclusion in prompt (remove unnecessary whitespace)
-    const cleanSvg = svg.replace(/\s+/g, ' ').trim();
-    svgContext = `\n\nUser's sketch/drawing (SVG):\n\`\`\`svg\n${cleanSvg}\n\`\`\``;
+  // Build text extraction context
+  let textContext = '';
+  if (extractedText && extractedText.trim()) {
+    textContext = `\n**Text found in drawing (use as reference if hard to read):**\n${extractedText}`;
   }
 
-  // Construct the full prompt
-  const prompt = `Create a new React component based on this user sketch and add it to the page.
+  // Image reference note
+  let imageNote = hasImage
+    ? '\n**[Drawing image provided as base64 PNG with labeled grid overlay]**'
+    : '';
 
-User's request: "${comment}"
+  if (visionDescription) {
+    imageNote += `\n\n## Visual Analysis of Drawing\n${visionDescription}`;
+  }
 
-${positionContext}${nearbyContext}${svgContext}
+  // Construct the comprehensive prompt - Principal Front-End Engineer persona
+  // IMPORTANT: Do NOT focus on pixel coordinates or absolute positioning
+  const prompt = `You are a Principal Front-End Engineer with expertise in React and modern web development. Your task is to interpret a user's sketch/wireframe and create a polished, production-ready React component.
 
-Instructions:
-1. Analyze the sketch/drawing to understand what UI component the user wants
-2. Create a React component that matches the visual intent of the sketch
-3. Use inline styles or Tailwind CSS classes for styling
-4. Insert the component at the appropriate location in the page (near the specified position)
-5. If the sketch shows:
-   - A rectangle/box: Create a card, container, or button depending on context
-   - Text elements: Create headings, paragraphs, or labels
-   - A form layout: Create form inputs
-   - Icons or shapes: Use appropriate icons or SVG elements
-   - Navigation elements: Create nav links or menus
-6. Match the approximate size and position from the bounding box
-7. Make the component fit naturally with the existing page design
+## User's Request
+"${comment}"
 
-Make the changes directly. No explanation needed.`;
+## Drawing Context
+${positionContext}${textContext}${nearbyContext}${imageNote}
+
+## Your Process
+1. **Analyze the Sketch:** Understand the visual intent—what UI component does the user want?
+2. **Interpret, Don't Transcribe:** Elevate the low-fidelity drawing into a high-fidelity component. Choose appropriate spacing, colors, and typography that match modern design standards.
+3. **Infer Missing Details:** If something is underspecified, use your expertise to make the best choice. An informed decision is better than an incomplete component.
+
+## Implementation Guidelines
+- Create a React component with inline styles or Tailwind CSS classes
+- Do NOT use hardcoded pixel positions or absolute coordinates - integrate naturally with existing page flow
+- Use flexbox, grid, or relative positioning to place the component appropriately
+- If the sketch shows:
+  - **Rectangle/box:** Card, container, button, or input field depending on context
+  - **Text elements:** Headings, paragraphs, or labels with appropriate hierarchy
+  - **Form layout:** Input fields with labels, proper spacing
+  - **Icons/shapes:** Use appropriate icons from lucide-react or inline SVGs
+  - **Navigation:** Nav links, menus, or breadcrumbs
+  - **Lists:** Ordered/unordered lists or grid layouts
+- Make the component fit naturally with the existing page design
+- Use semantic HTML and ARIA attributes where appropriate
+- The component should integrate well with the existing codebase structure
+
+## Annotations
+- Any **red marks** in the drawing are instructions—follow them but don't render them
+- Text annotations describe intent or constraints
+
+Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.`;
 
   return prompt;
 }
@@ -378,6 +428,38 @@ export function spawnGeminiCLI(
 }
 
 /**
+ * Analyze an image using the Google Generative AI SDK (Gemini Vision)
+ */
+async function analyzeImageWithGemini(apiKey: string, base64Image: string, modelName: string = 'gemini-2.5-flash'): Promise<string> {
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    // Clean base64 string if needed (remove data URI prefix)
+    const imageParts = [
+      {
+        inlineData: {
+          data: base64Image.replace(/^data:image\/\w+;base64,/, ''),
+          mimeType: 'image/png',
+        },
+      },
+    ];
+
+    const result = await model.generateContent([
+      "Analyze this UI wireframe sketch in extreme detail for a front-end developer. Describe every element, layout, spacing, icons, and text you see. Mention relative positions and hierarchy. Be distinct about what is drawn vs what might be background. Do NOT focus on exact pixel coordinates or absolute positions - describe layouts in terms of relative positioning (left/right/top/bottom, centered, evenly spaced, etc.).",
+      ...imageParts,
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    return text;
+  } catch (error) {
+    console.error('Failed to analyze image with Gemini Vision:', error);
+    return `[Extension Error] Failed to analyze drawing: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+/**
  * Create a streaming response for use in API routes (Next.js, Express, etc.)
  */
 export function createGeminiCLIStream(
@@ -385,17 +467,60 @@ export function createGeminiCLIStream(
   projectContext?: ProjectContext,
   options?: GeminiCLIOptions
 ): ReadableStream<Uint8Array> {
-  const prompt = buildPromptFromAnnotation(annotation, projectContext, { fastMode: options?.fastMode ?? true });
-
-  // Log the full prompt being sent to Gemini CLI
-  console.log('\n========== GEMINI CLI PROMPT ==========');
-  console.log(prompt);
-  console.log('========================================\n');
-
+  // We need to handle the prompt building inside logic because it might be async now
+  // But ReadableStream start controller can be async
   const encoder = new TextEncoder();
 
   return new ReadableStream({
     async start(controller) {
+      const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
+      let visionDescription = '';
+
+      // Perform Image Analysis if needed for drawing annotations with images
+      if (annotation.type === 'drawing' && (annotation as { drawingImage?: string }).drawingImage && apiKey) {
+        // Send a "progress" event to the client
+        const progressEvent: GeminiCLIEvent = {
+          type: 'message',
+          role: 'assistant',
+          content: '🎨 Analyzing drawing image with Gemini Vision...',
+          timestamp: new Date().toISOString()
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(progressEvent)}\n\n`));
+
+        visionDescription = await analyzeImageWithGemini(
+          apiKey,
+          (annotation as { drawingImage: string }).drawingImage,
+          options?.model || 'gemini-2.5-flash'
+        );
+
+        // Log the analysis result
+        const analysisEvent: GeminiCLIEvent = {
+          type: 'message',
+          role: 'assistant',
+          content: `👁️ Visual Analysis:\n${visionDescription}`,
+          timestamp: new Date().toISOString()
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(analysisEvent)}\n\n`));
+      }
+
+      const prompt = buildPromptFromAnnotation(
+        annotation,
+        projectContext,
+        {
+          fastMode: options?.fastMode ?? false,
+          visionDescription
+        }
+      );
+
+      // Send the prompt as a debug event so it shows up in browser console
+      const promptEvent: GeminiCLIEvent = {
+        type: 'debug',
+        content: prompt,
+        label: 'GEMINI CLI PROMPT',
+        timestamp: new Date().toISOString()
+      };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(promptEvent)}\n\n`));
+
       const { events } = spawnGeminiCLI(prompt, options);
 
       for await (const event of events) {
@@ -423,7 +548,29 @@ export async function runGeminiCLI(
   response: string;
   events: GeminiCLIEvent[];
 }> {
-  const prompt = buildPromptFromAnnotation(annotation, projectContext, { fastMode: options?.fastMode ?? true });
+  const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
+  let visionDescription = '';
+
+  // Perform Image Analysis if needed for drawing annotations with images
+  if (annotation.type === 'drawing' && (annotation as { drawingImage?: string }).drawingImage && apiKey) {
+    visionDescription = await analyzeImageWithGemini(
+      apiKey,
+      (annotation as { drawingImage: string }).drawingImage,
+      options?.model || 'gemini-2.5-flash'
+    );
+  }
+
+  const prompt = buildPromptFromAnnotation(
+    annotation,
+    projectContext,
+    {
+      fastMode: options?.fastMode ?? false,
+      visionDescription
+    }
+  );
+
+  // Note: For runGeminiCLI (non-streaming), logs are not sent to browser
+  // Use createGeminiCLIStream for browser console logging
   const { events: eventIterator } = spawnGeminiCLI(prompt, options);
 
   const events: GeminiCLIEvent[] = [];

@@ -3,6 +3,17 @@
 import { Skema, type Annotation } from "skema-core";
 import { useCallback, useRef } from "react";
 
+// Event type from skema-core/server
+interface GeminiCLIEvent {
+  type: 'init' | 'message' | 'tool_use' | 'tool_result' | 'error' | 'result' | 'done' | 'debug';
+  timestamp?: string;
+  content?: string;
+  label?: string;
+  role?: 'user' | 'assistant';
+  tool_name?: string;
+  [key: string]: unknown;
+}
+
 export function SkemaWrapper() {
   // Track annotation IDs to their change IDs for reverting
   const annotationChangesRef = useRef<Map<string, string[]>>(new Map());
@@ -31,12 +42,65 @@ export function SkemaWrapper() {
         throw new Error(`Gemini API error: ${response.status}`);
       }
 
-      const result = await response.json();
-      console.log('[Skema] Gemini CLI result:', result);
+      // Handle SSE stream
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
 
-      // Store change IDs for potential revert
-      if (result.changeIds && result.changeIds.length > 0) {
-        annotationChangesRef.current.set(annotation.id, result.changeIds);
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event: GeminiCLIEvent = JSON.parse(line.slice(6));
+              
+              // Log events to browser console based on type
+              switch (event.type) {
+                case 'debug':
+                  if (event.label) {
+                    console.groupCollapsed(`%c[Skema] ${event.label}`, 'color: #6366f1; font-weight: bold');
+                    console.log(event.content);
+                    console.groupEnd();
+                  } else {
+                    console.log('%c[Skema Debug]', 'color: #6366f1', event.content);
+                  }
+                  break;
+                case 'message':
+                  if (event.role === 'assistant') {
+                    console.log('%c[Skema AI]', 'color: #10b981', event.content);
+                  }
+                  break;
+                case 'tool_use':
+                  console.log('%c[Skema Tool]', 'color: #f59e0b', event.tool_name, event);
+                  break;
+                case 'error':
+                  console.error('[Skema Error]', event.content);
+                  break;
+                case 'done':
+                  console.log('%c[Skema] Done', 'color: #10b981; font-weight: bold', event);
+                  break;
+              }
+            } catch {
+              // Ignore parse errors for incomplete lines
+            }
+          }
+        }
+      }
+
+      // Get annotation ID from response header for revert tracking
+      const annotationId = response.headers.get('X-Annotation-Id');
+      if (annotationId) {
+        annotationChangesRef.current.set(annotation.id, [annotationId]);
       }
     } catch (error) {
       console.error('[Skema] Failed to submit annotation:', error);

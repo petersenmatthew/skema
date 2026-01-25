@@ -43,6 +43,13 @@ export {
   bboxFromPoints,
 } from './utils/coordinates';
 
+export {
+  blobToBase64,
+  addGridToSvg,
+  getGridCellReference,
+  extractTextFromShapes,
+} from './lib/utils';
+
 // Types
 export type {
   Annotation,
@@ -51,8 +58,11 @@ export type {
   DOMElement,
   DOMSelection,
   DrawingAnnotation,
+  ElementStyles,
   GestureAnnotation,
+  NearbyElement,
   PendingAnnotation,
+  ProjectStyleContext,
   SkemaMode,
   SkemaProps,
   ViewportInfo,
