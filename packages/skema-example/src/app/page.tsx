@@ -1,6 +1,8 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useCallback } from 'react';
+import type { Annotation } from 'skema-core';
 
 // Import Skema dynamically to avoid SSR issues with tldraw
 const Skema = dynamic(() => import('skema-core').then((mod) => mod.Skema), {
@@ -8,6 +10,72 @@ const Skema = dynamic(() => import('skema-core').then((mod) => mod.Skema), {
 });
 
 export default function Home() {
+  const handleAnnotationSubmit = useCallback(async (annotation: Annotation, comment: string) => {
+    console.log('[Skema] Annotation submitted:', { annotation, comment });
+
+    try {
+      const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          annotation: { ...annotation, comment },
+          projectContext: {
+            pathname: window.location.pathname,
+            viewport: {
+              width: window.innerWidth,
+              height: window.innerHeight,
+            },
+          },
+        }),
+      });
+
+      if (!response.body) {
+        throw new Error('No response body');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              console.log('[Gemini CLI]', event.type, event);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Gemini CLI] Request failed:', error);
+    }
+  }, []);
+
+  const handleAnnotationDelete = useCallback(async (annotationId: string) => {
+    console.log('[Skema] Annotation deleted, reverting changes:', annotationId);
+
+    try {
+      const response = await fetch('/api/gemini', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annotationId }),
+      });
+
+      const result = await response.json();
+      console.log('[Skema] Revert result:', result);
+    } catch (error) {
+      console.error('[Skema] Revert failed:', error);
+    }
+  }, []);
+
   return (
     <main>
       {/* Demo page content */}
@@ -27,7 +95,11 @@ export default function Home() {
             Skema Demo
           </div>
           <div style={{ display: 'flex', gap: '24px' }}>
-            <a href="#features" style={{ color: 'white' }}>Features</a>
+            <a href="#features" style={{ color: 'white' }}><span style={{
+                background: 'linear-gradient(to right, #FF0000, #FF7F7F)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}>Features</span></a>
             <a href="#about" style={{ color: 'white' }}>About</a>
             <a href="#contact" style={{ color: 'white' }}>Contact</a>
           </div>
@@ -36,38 +108,29 @@ export default function Home() {
 
       {/* Hero Section */}
       <section style={{
-        padding: '80px 40px',
-        textAlign: 'center',
-        background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-        color: 'white',
+        padding: '96px 40px',
+        textAlign: 'left',
+        backgroundColor: '#ffffff',
+        color: '#000000',
       }}>
-        <h1 style={{ fontSize: '48px', marginBottom: '20px' }}>
+        <h1 style={{
+          fontSize: '60px',
+          marginBottom: '20px',
+          fontWeight: 'bold',
+          background: 'linear-gradient(to right, #4CAF50, #8BC34A)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+        }}>
           Welcome to Skema
         </h1>
-        <p style={{ fontSize: '20px', marginBottom: '32px', maxWidth: '600px', margin: '0 auto 32px' }}>
+        <p style={{ fontSize: '20px', marginBottom: '32px', maxWidth: '600px', color: '#666666' }}>
           A drawing-based website development tool that transforms how you annotate and communicate design changes.
         </p>
-        <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
-          <button style={{
-            padding: '14px 28px',
-            fontSize: '16px',
-            backgroundColor: 'white',
-            color: '#3b82f6',
-            border: 'none',
-            borderRadius: '8px',
-            fontWeight: '600',
-          }}>
+        <div style={{ display: 'flex', gap: '16px', justifyContent: 'left' }}>
+          <button className="btn btn-primary">
             Get Started
           </button>
-          <button style={{
-            padding: '14px 28px',
-            fontSize: '16px',
-            backgroundColor: 'transparent',
-            color: 'white',
-            border: '2px solid white',
-            borderRadius: '8px',
-            fontWeight: '600',
-          }}>
+          <button className="btn btn-secondary">
             Learn More
           </button>
         </div>
@@ -79,9 +142,20 @@ export default function Home() {
         maxWidth: '1200px',
         margin: '0 auto',
       }}>
-        <h2 style={{ fontSize: '36px', textAlign: 'center', marginBottom: '48px' }}>
-          Features
-        </h2>
+        <h2 style={{
+          fontSize: '48px',
+          textAlign: 'center',
+          marginBottom: '48px',
+          background: 'linear-gradient(45deg, #FF6B6B, #5F27CD)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+        }}>
+                        <span style={{
+                          background: 'linear-gradient(to right, #6366F1, #3B82F6)',
+                          WebkitBackgroundClip: 'text',
+                          WebkitTextFillColor: 'transparent',
+                        }}>Features</span>        </h2>
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -90,36 +164,35 @@ export default function Home() {
           <div style={{
             padding: '32px',
             borderRadius: '12px',
-            backgroundColor: '#f8fafc',
+            background: '#f3f4f6',
             border: '1px solid #e2e8f0',
           }}>
-            <div style={{ fontSize: '32px', marginBottom: '16px' }}>🎨</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '12px' }}>Draw Anywhere</h3>
-            <p style={{ color: '#64748b' }}>
+            <h3 style={{ fontSize: '20px', marginBottom: '12px', color: '#334155' }}>✏️ Draw Anywhere</h3>
+            <p style={{ color: '#475569' }}>
               Use tldraw-powered tools to draw directly on your website. Circle elements, draw arrows, add annotations.
             </p>
           </div>
           <div style={{
             padding: '32px',
             borderRadius: '12px',
-            backgroundColor: '#f8fafc',
+            background: '#f3f4f6',
             border: '1px solid #e2e8f0',
           }}>
-            <div style={{ fontSize: '32px', marginBottom: '16px' }}>🎯</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '12px' }}>DOM Picker</h3>
-            <p style={{ color: '#64748b' }}>
+            <div style={{ fontSize: '32px', marginBottom: '16px', color: '#334155' }}>🎯</div>
+            <h3 style={{ fontSize: '20px', marginBottom: '12px', color: '#334155' }}>DOM Picker</h3>
+            <p style={{ color: '#475569' }}>
               Select any element on the page. Skema captures the selector, bounding box, and context automatically.
             </p>
           </div>
           <div style={{
             padding: '32px',
             borderRadius: '12px',
-            backgroundColor: '#f8fafc',
+            background: '#f3f4f6',
             border: '1px solid #e2e8f0',
           }}>
-            <div style={{ fontSize: '32px', marginBottom: '16px' }}>📤</div>
-            <h3 style={{ fontSize: '20px', marginBottom: '12px' }}>Export to Agents</h3>
-            <p style={{ color: '#64748b' }}>
+            <div style={{ fontSize: '32px', marginBottom: '16px', color: '#334155' }}>🩹</div>
+            <h3 style={{ fontSize: '20px', marginBottom: '12px', color: '#334155' }}>Export to Agents</h3>
+            <p style={{ color: '#475569' }}>
               Export annotations in a structured JSON format optimized for AI coding agents like Claude.
             </p>
           </div>
@@ -240,7 +313,9 @@ export default function Home() {
       </footer>
 
       {/* Skema Overlay - only renders in development */}
-      {process.env.NODE_ENV === 'development' && <Skema />}
+      {process.env.NODE_ENV === 'development' && (
+        <Skema onAnnotationSubmit={handleAnnotationSubmit} onAnnotationDelete={handleAnnotationDelete} />
+      )}
     </main>
   );
 }
