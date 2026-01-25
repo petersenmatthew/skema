@@ -459,6 +459,8 @@ Do NOT focus on exact pixel coordinates or absolute positions - describe layouts
 in terms of relative positioning (left/right/top/bottom, centered, evenly spaced, etc.).
 
 It is expected that they will be rough draft's / hand-drawn things. Interpret the drawing and its goals as best as you can.
+DO NOT MENTION THAT THINGS HAVE "Hand-sketched" or "Hand-drawn" vibes. Make assumptions of what they were trying to do.
+Just FYI, this gets passed onto a generator to generate the actual code of modern UI componenents.
 `.trim();
 
     const result = await model.generateContent([

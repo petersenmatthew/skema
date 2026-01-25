@@ -638,7 +638,7 @@ const AnnotationsSidebar: React.FC<{
             >
               <div style={{ fontWeight: 500, marginBottom: '4px' }}>
                 {annotation.type === 'dom_selection' && `🎯 ${(annotation as DOMSelection).tagName}`}
-                {annotation.type === 'drawing' && `✏️ Drawing`}
+                {annotation.type === 'drawing' && `✏️ ${(annotation as import('../types').DrawingAnnotation).comment || 'Drawing'}`}
                 {annotation.type === 'gesture' && `👆 ${annotation.gesture}`}
               </div>
               {annotation.type === 'dom_selection' && (
