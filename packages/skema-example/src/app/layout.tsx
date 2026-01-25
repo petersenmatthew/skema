@@ -4,8 +4,22 @@ import './globals.css'
 import { SkemaWrapper } from "@/components/skema-wrapper"
 
 export const metadata: Metadata = {
-  title: 'Skema Documentation',
-  description: 'A drawing-based website development tool that transforms how you annotate and communicate design changes.',
+  title: 'Skema',
+  description: 'art == design == code',
+  icons: {
+    icon: '/skema-icon.png',
+  },
+  openGraph: {
+    title: 'Skema',
+    description: 'art == design == code',
+    images: ['/skema-dark.png'],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Skema',
+    description: 'art == design == code',
+    images: ['/skema-dark.png'],
+  },
 }
 
 export default function RootLayout({
