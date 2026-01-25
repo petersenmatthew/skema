@@ -1191,7 +1191,8 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
   }, []);
 
   // Handle drawing annotation (triggered when drawings are selected)
-  const handleDrawingAnnotation = useCallback((selectedIds: TLShapeId[]) => {
+  // skipDomElements: when true, only annotate the drawing without including DOM elements behind it
+  const handleDrawingAnnotation = useCallback((selectedIds: TLShapeId[], skipDomElements = false) => {
     if (!editorRef.current || selectedIds.length === 0) return;
     // Don't trigger if there's already a pending annotation
     if (pendingAnnotation) return;
@@ -1231,14 +1232,17 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
 
     if (drawingShapes.length === 0) return;
 
-    // Check for DOM elements in the selection bounds
-    const viewportBounds: BoundingBox = {
-      x: selectionBounds.x - window.scrollX,
-      y: selectionBounds.y - window.scrollY,
-      width: selectionBounds.width,
-      height: selectionBounds.height,
-    };
-    const domElements = findDOMElementsInBounds(viewportBounds);
+    // Check for DOM elements in the selection bounds (unless skipped)
+    let domElements: HTMLElement[] = [];
+    if (!skipDomElements) {
+      const viewportBounds: BoundingBox = {
+        x: selectionBounds.x - window.scrollX,
+        y: selectionBounds.y - window.scrollY,
+        width: selectionBounds.width,
+        height: selectionBounds.height,
+      };
+      domElements = findDOMElementsInBounds(viewportBounds);
+    }
 
     // Show annotation popup for drawings (and any DOM elements in bounds)
     const centerX = selectionBounds.x + selectionBounds.width / 2;
@@ -1278,6 +1282,17 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
 
   // Handle brush/drag selection to select DOM elements
   const handleBrushSelection = useCallback((brushBounds: BoundingBox) => {
+    // If tldraw already selected shapes (drawings), show drawing annotation popup instead
+    // This prevents selecting the DOM element behind a drawing when you only want the drawing
+    if (editorRef.current) {
+      const selectedShapeIds = editorRef.current.getSelectedShapeIds();
+      if (selectedShapeIds.length > 0) {
+        // Skip DOM elements - user selected the drawing, not what's behind it
+        handleDrawingAnnotation(selectedShapeIds, true);
+        return;
+      }
+    }
+
     // Convert brush bounds (in document coordinates due to camera sync) to viewport coordinates
     const viewportBounds: BoundingBox = {
       x: brushBounds.x - window.scrollX,
@@ -1308,7 +1323,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     } else {
       handleMultiDOMSelect(selections);
     }
-  }, [findDOMElementsInBounds, domSelections, handleDOMSelect, handleMultiDOMSelect]);
+  }, [findDOMElementsInBounds, domSelections, handleDOMSelect, handleMultiDOMSelect, handleDrawingAnnotation]);
 
   // Check if a point is inside a polygon (ray casting algorithm)
   const isPointInPolygon = useCallback((point: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean => {
@@ -1336,6 +1351,17 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
   // Handle lasso selection to select DOM elements that touch the lasso area
   const handleLassoSelection = useCallback((lassoPoints: { x: number; y: number }[]) => {
     if (lassoPoints.length < 3) return;
+
+    // If tldraw already selected shapes (drawings), show drawing annotation popup instead
+    // This prevents selecting the DOM element behind a drawing when you only want the drawing
+    if (editorRef.current) {
+      const selectedShapeIds = editorRef.current.getSelectedShapeIds();
+      if (selectedShapeIds.length > 0) {
+        // Skip DOM elements - user selected the drawing, not what's behind it
+        handleDrawingAnnotation(selectedShapeIds, true);
+        return;
+      }
+    }
 
     // Convert lasso points from page coordinates to viewport coordinates
     const viewportPoints = lassoPoints.map(p => ({
@@ -1405,7 +1431,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     } else {
       handleMultiDOMSelect(selections);
     }
-  }, [isPointInPolygon, domSelections, handleDOMSelect, handleMultiDOMSelect]);
+  }, [isPointInPolygon, domSelections, handleDOMSelect, handleMultiDOMSelect, handleDrawingAnnotation]);
 
   // Editor mount handler
   const handleMount = useCallback((editor: Editor) => {
@@ -1461,6 +1487,22 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
               selections: [selection],
               annotationType: 'dom_selection',
             });
+          }
+        };
+
+        // Handle double-click on shape (for drawings)
+        selectIdleState.handleDoubleClickOnShape = (_info, shape) => {
+          // Record double click time
+          lastDoubleClickRef.current = Date.now();
+
+          // Check if this is a drawing shape type
+          if (shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)) {
+            // Get all selected shapes (in case multiple are selected)
+            const selectedIds = editor.getSelectedShapeIds();
+            // If the double-clicked shape isn't selected, just use that one
+            const shapeIds = selectedIds.length > 0 ? selectedIds : [shape.id];
+            // Skip DOM elements - user explicitly double-clicked on the drawing
+            handleDrawingAnnotation(shapeIds, true);
           }
         };
 
