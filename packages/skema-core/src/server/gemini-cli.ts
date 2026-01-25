@@ -150,7 +150,7 @@ export function buildPromptFromAnnotation(
       target = `<${tag}>`;
     }
 
-    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed.`;
+    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. IMPORTANT: Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
   }
 
   // Detailed mode: full context
@@ -189,7 +189,7 @@ Element: `;
     prompt += `annotation at (${annotation.boundingBox?.x}, ${annotation.boundingBox?.y})`;
   }
 
-  prompt += `\n\nMake minimal changes. No explanation needed.`;
+  prompt += `\n\nMake minimal changes. IMPORTANT: Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
 
   return prompt;
 }
@@ -274,7 +274,7 @@ function buildDrawingPrompt(
 
   // Construct the comprehensive prompt - Principal Front-End Engineer persona
   // IMPORTANT: Do NOT focus on pixel coordinates or absolute positioning
-  const prompt = `You are a Principal Front-End Engineer with expertise in React and modern web development. Your task is to interpret a user's sketch/wireframe and create a polished, production-ready React component.
+  const prompt = `Your task is to interpret a user's sketch/wireframe and turn it into code that is integrated in the codebase.
 
 ## User's Request
 "${comment}"
@@ -299,6 +299,7 @@ ${positionContext}${textContext}${nearbyContext}${imageNote}
   - **Navigation:** Nav links, menus, or breadcrumbs
   - **Lists:** Ordered/unordered lists or grid layouts
 - Make the component fit naturally with the existing page design
+- Style it nicely and according to the existing codebase
 - Use semantic HTML and ARIA attributes where appropriate
 - The component should integrate well with the existing codebase structure
 
@@ -306,7 +307,9 @@ ${positionContext}${textContext}${nearbyContext}${imageNote}
 - Any **red marks** in the drawing are instructions—follow them but don't render them
 - Text annotations describe intent or constraints
 
-Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.`;
+Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.
+
+IMPORTANT: Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself.`;
 
   return prompt;
 }
@@ -445,8 +448,21 @@ async function analyzeImageWithGemini(apiKey: string, base64Image: string, model
       },
     ];
 
+    const imageAnalysisPrompt = `
+Analyze this UI wireframe sketch in extreme detail for a front-end developer.
+
+Describe every element, layout, spacing, icons, and text you see.
+Mention relative positions and hierarchy.
+Be distinct about what is drawn vs what might be background.
+
+Do NOT focus on exact pixel coordinates or absolute positions - describe layouts 
+in terms of relative positioning (left/right/top/bottom, centered, evenly spaced, etc.).
+
+It is expected that they will be rough draft's / hand-drawn things. Interpret the drawing and its goals as best as you can.
+`.trim();
+
     const result = await model.generateContent([
-      "Analyze this UI wireframe sketch in extreme detail for a front-end developer. Describe every element, layout, spacing, icons, and text you see. Mention relative positions and hierarchy. Be distinct about what is drawn vs what might be background. Do NOT focus on exact pixel coordinates or absolute positions - describe layouts in terms of relative positioning (left/right/top/bottom, centered, evenly spaced, etc.).",
+      imageAnalysisPrompt,
       ...imageParts,
     ]);
 
