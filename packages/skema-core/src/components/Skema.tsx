@@ -77,8 +77,8 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
   const markerColor = isDrawing ? '#8B5CF6' : accentColor; // Purple for drawings
 
   // Get comment for tooltip
-  const comment = annotation.type === 'dom_selection' 
-    ? (annotation as DOMSelection).comment 
+  const comment = annotation.type === 'dom_selection'
+    ? (annotation as DOMSelection).comment
     : undefined;
   const elementName = annotation.type === 'dom_selection'
     ? (annotation as DOMSelection).tagName
@@ -143,16 +143,16 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
             zIndex: 999999,
           }}
         >
-          <div style={{ 
-            fontSize: 11, 
+          <div style={{
+            fontSize: 11,
             color: 'rgba(255,255,255,0.6)',
             marginBottom: comment ? 4 : 0,
           }}>
             {elementName}
           </div>
           {comment && (
-            <div style={{ 
-              fontSize: 12, 
+            <div style={{
+              fontSize: 12,
               color: 'white',
               whiteSpace: 'normal',
               wordBreak: 'break-word',
@@ -666,7 +666,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
       const selections = pendingAnnotation.selections;
-      
+
       if (selections.length === 1) {
         // Single element - create simple annotation
         const selection = { ...selections[0], comment };
@@ -695,7 +695,7 @@ export const Skema: React.FC<SkemaProps> = ({
             attributes: s.attributes,
           })),
         };
-        
+
         setDomSelections((prev) => [...prev, groupedSelection]);
         setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...groupedSelection }]);
       }
@@ -710,6 +710,36 @@ export const Skema: React.FC<SkemaProps> = ({
         timestamp: Date.now(),
       };
       setAnnotations((prev) => [...prev, drawingAnnotation]);
+
+      // FORENSIC LOGGING - Drawing annotation
+      console.log('[Skema Forensic] New Drawing Annotation:', {
+        index: 'drawing-' + Date.now(),
+        type: 'drawing',
+        comment,
+        shapes: pendingAnnotation.shapeIds,
+        boundingBox: pendingAnnotation.boundingBox,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // Log DOM selection annotations
+    if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
+      const selections = pendingAnnotation.selections;
+      console.log('[Skema Forensic] New DOM Selection Annotation:', {
+        index: annotations.length + 1,
+        type: 'dom_selection',
+        comment,
+        elementCount: selections.length,
+        elements: selections.map(s => ({
+          tagName: s.tagName,
+          selector: s.selector,
+          elementPath: s.elementPath,
+          text: s.text?.slice(0, 100),
+          boundingBox: s.boundingBox,
+        })),
+        combinedBoundingBox: pendingAnnotation.boundingBox,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     // Animate out and clear
@@ -816,7 +846,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     // Calculate bounds from shapes directly (more reliable than selection bounds)
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    
+
     for (const shape of selectedShapes) {
       if (!shape) continue;
       const bounds = editor.getShapePageBounds(shape.id);
@@ -829,7 +859,7 @@ export const Skema: React.FC<SkemaProps> = ({
     }
 
     if (minX === Infinity) return;
-    
+
     const selectionBounds = {
       x: minX,
       y: minY,
@@ -1149,7 +1179,7 @@ export const Skema: React.FC<SkemaProps> = ({
     const handlePointerUp = (e: PointerEvent) => {
       // Only process if we were drawing
       if (!isDrawing || shapesCreatedThisSession.length === 0) return;
-      
+
       // Clear any pending check
       if (drawingCheckTimeout) {
         clearTimeout(drawingCheckTimeout);
@@ -1161,7 +1191,7 @@ export const Skema: React.FC<SkemaProps> = ({
           const shapeIds = [...shapesCreatedThisSession];
           shapesCreatedThisSession = [];
           isDrawing = false;
-          
+
           // Verify shapes exist and show popup
           const validIds = shapeIds.filter(id => editor.getShape(id));
           if (validIds.length > 0) {
