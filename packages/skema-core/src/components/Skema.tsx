@@ -712,34 +712,77 @@ export const Skema: React.FC<SkemaProps> = ({
       setAnnotations((prev) => [...prev, drawingAnnotation]);
 
       // FORENSIC LOGGING - Drawing annotation
-      console.log('[Skema Forensic] New Drawing Annotation:', {
-        index: 'drawing-' + Date.now(),
-        type: 'drawing',
-        comment,
-        shapes: pendingAnnotation.shapeIds,
-        boundingBox: pendingAnnotation.boundingBox,
-        timestamp: new Date().toISOString(),
-      });
+      const bbox = pendingAnnotation.boundingBox!;
+      const drawingLog = `
+### ${annotations.length + 1}. Drawing (${pendingAnnotation.shapeIds?.length || 0} shapes)
+**Position:** x:${Math.round(bbox.x)}, y:${Math.round(bbox.y)} (${Math.round(bbox.width)}×${Math.round(bbox.height)}px)
+**Annotation at:** ${((bbox.x + bbox.width / 2) / window.innerWidth * 100).toFixed(1)}% from left, ${Math.round(bbox.y + bbox.height / 2)}px from top
+**Shape IDs:** ${pendingAnnotation.shapeIds?.join(', ') || 'none'}
+**Feedback:** ${comment}
+`;
+      console.log(drawingLog);
     }
 
     // Log DOM selection annotations
     if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
       const selections = pendingAnnotation.selections;
-      console.log('[Skema Forensic] New DOM Selection Annotation:', {
-        index: annotations.length + 1,
-        type: 'dom_selection',
-        comment,
-        elementCount: selections.length,
-        elements: selections.map(s => ({
-          tagName: s.tagName,
-          selector: s.selector,
-          elementPath: s.elementPath,
-          text: s.text?.slice(0, 100),
-          boundingBox: s.boundingBox,
-        })),
-        combinedBoundingBox: pendingAnnotation.boundingBox,
-        timestamp: new Date().toISOString(),
-      });
+      const annotationIndex = annotations.length + 1;
+
+      // Build element descriptions
+      const elementDescs = selections.map(s => {
+        const textPreview = s.text?.slice(0, 50) || '';
+        return `${s.tagName.toLowerCase()}${textPreview ? `: "${textPreview}..."` : ''}`;
+      }).join(', ');
+
+      // Get first element for detailed forensic data
+      const firstSelection = selections[0];
+      const firstElement = document.querySelector(firstSelection.selector) as HTMLElement | null;
+
+      let computedStylesStr = 'N/A';
+      let nearbyElements = 'N/A';
+
+      if (firstElement) {
+        // Get computed styles
+        const styles = window.getComputedStyle(firstElement);
+        computedStylesStr = [
+          `color: ${styles.color}`,
+          `border-color: ${styles.borderColor}`,
+          `font-size: ${styles.fontSize}`,
+          `font-weight: ${styles.fontWeight}`,
+          `font-family: ${styles.fontFamily}`,
+          `line-height: ${styles.lineHeight}`,
+          `letter-spacing: ${styles.letterSpacing}`,
+          `text-align: ${styles.textAlign}`,
+          `width: ${styles.width}`,
+          `height: ${styles.height}`,
+          `border: ${styles.border}`,
+          `display: ${styles.display}`,
+          `flex-direction: ${styles.flexDirection}`,
+          `opacity: ${styles.opacity}`,
+        ].join('; ');
+
+        // Get nearby elements (siblings)
+        const parent = firstElement.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children)
+            .filter(el => el !== firstElement)
+            .slice(0, 3)
+            .map(el => el.tagName.toLowerCase());
+          nearbyElements = siblings.length > 0 ? siblings.join(', ') : 'none';
+        }
+      }
+
+      const bbox = pendingAnnotation.boundingBox!;
+      const forensicLog = `
+### ${annotationIndex}. ${selections.length > 1 ? `${selections.length} elements: ` : ''}${elementDescs}
+${selections.length > 1 ? '*Forensic data shown for first element of selection*\n' : ''}**Full DOM Path:** ${firstSelection.elementPath}
+**Position:** x:${Math.round(bbox.x)}, y:${Math.round(bbox.y)} (${Math.round(bbox.width)}×${Math.round(bbox.height)}px)
+**Annotation at:** ${((bbox.x + bbox.width / 2) / window.innerWidth * 100).toFixed(1)}% from left, ${Math.round(bbox.y + bbox.height / 2)}px from top
+**Computed Styles:** ${computedStylesStr}
+**Nearby Elements:** ${nearbyElements}
+**Feedback:** ${comment}
+`;
+      console.log(forensicLog);
     }
 
     // Animate out and clear
