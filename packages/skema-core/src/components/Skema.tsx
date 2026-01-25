@@ -368,16 +368,16 @@ const SkemaToolbar: React.FC = () => {
         label="Select (S)"
       />
       <ToolbarButton
-        onClick={() => editor.setCurrentTool('lasso-select')}
-        isSelected={isLassoSelected}
-        icon={<LassoIcon isSelected={isLassoSelected} />}
-        label="Lasso Select (L)"
-      />
-      <ToolbarButton
         onClick={() => editor.setCurrentTool('draw')}
         isSelected={isDrawSelected}
         icon={<DrawIcon isSelected={isDrawSelected} />}
         label="Draw (D)"
+      />
+      <ToolbarButton
+        onClick={() => editor.setCurrentTool('lasso-select')}
+        isSelected={isLassoSelected}
+        icon={<LassoIcon isSelected={isLassoSelected} />}
+        label="Lasso Select (L)"
       />
       <ToolbarButton
         onClick={() => editor.setCurrentTool('eraser')}

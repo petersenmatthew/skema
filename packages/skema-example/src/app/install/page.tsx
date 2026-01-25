@@ -90,16 +90,20 @@ export default function Page() {
                 <Kbd keys={["Cmd", "Shift", "E"]} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">DOM Picker</span>
-                <Kbd keys={["P"]} />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Lasso Select</span>
+                <span className="text-sm text-muted-foreground">Select Tool</span>
                 <Kbd keys={["S"]} />
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Draw tool</span>
+                <span className="text-sm text-muted-foreground">Draw Tool</span>
                 <Kbd keys={["D"]} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Lasso Select</span>
+                <Kbd keys={["L"]} />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Eraser</span>
+                <Kbd keys={["E"]} />
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">Cancel</span>
