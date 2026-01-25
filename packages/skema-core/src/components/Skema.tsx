@@ -365,7 +365,7 @@ const SkemaToolbar: React.FC = () => {
         onClick={() => editor.setCurrentTool('select')}
         isSelected={isSelectSelected}
         icon={<SelectIcon isSelected={isSelectSelected} />}
-        label="Select (V)"
+        label="Select (S)"
       />
       <ToolbarButton
         onClick={() => editor.setCurrentTool('lasso-select')}
@@ -1611,7 +1611,10 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     tools(editor, tools) {
       return {
         ...tools,
-
+        'select': {
+          ...tools['select'],
+          kbd: 's',
+        },
         'lasso-select': {
           id: 'lasso-select',
           label: 'Lasso Select',

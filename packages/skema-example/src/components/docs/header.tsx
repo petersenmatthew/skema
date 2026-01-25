@@ -44,7 +44,7 @@ export function Header() {
         <div className="flex items-center gap-4">
           <ThemeToggle />
           <Link
-            href="https://github.com"
+            href="https://github.com/petersenmatthew/skema"
             className="text-muted-foreground transition-colors hover:text-foreground"
           >
             <Github className="h-4 w-4" />

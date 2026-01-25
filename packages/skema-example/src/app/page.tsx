@@ -22,7 +22,7 @@ export default function OverviewPage() {
                 Get Started
               </Link>
               <a
-                href="https://github.com"
+                href="https://github.com/petersenmatthew/skema"
                 className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-black transition-colors hover:bg-muted"
               >
                 GitHub
