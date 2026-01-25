@@ -150,7 +150,7 @@ export function buildPromptFromAnnotation(
       target = `<${tag}>`;
     }
 
-    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. CRITICAL: Do NOT create new files. Only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
+    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. CRITICAL: Do NOT create new files. Only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line. IMPORTANT: Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.`;
   }
 
   // Detailed mode: full context
@@ -189,7 +189,7 @@ Element: `;
     prompt += `annotation at (${annotation.boundingBox?.x}, ${annotation.boundingBox?.y})`;
   }
 
-  prompt += `\n\nMake minimal changes. CRITICAL: Do NOT create new files - only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.`;
+  prompt += `\n\nMake minimal changes. CRITICAL: Do NOT create new files - only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line. IMPORTANT: Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.`;
 
   return prompt;
 }
@@ -316,7 +316,8 @@ IMPORTANT RULES TO AVOID ERRORS:
 3. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
 4. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
 5. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports
-6. DONT MAKE ANY CHANGES THAT WOULD RESULT IN A Build Error`;
+6. DONT MAKE ANY CHANGES THAT WOULD RESULT IN A Build Error
+7. **JSX SYNTAX VALIDATION** - ALWAYS ensure every JSX tag is properly closed. Every opening tag like <div>, <a>, <span>, <button> MUST have a matching closing tag </div>, </a>, </span>, </button>. Self-closing tags like <img />, <input />, <br /> must end with />. Before finishing, mentally verify all tag pairs are balanced.`;
 
   return prompt;
 }
