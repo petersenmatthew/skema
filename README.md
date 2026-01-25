@@ -15,26 +15,55 @@ Skema is a React component that provides a tldraw-powered drawing overlay for an
 
 ## Installation
 
+### 1. Install the package
+
 ```bash
-# Install in your Next.js project
 bun add skema-core
+# or
+npm install skema-core
 ```
 
-## Usage
+### 2. Create the API route
+
+Run the init command to create the Gemini API route in your Next.js App Router project:
+
+```bash
+bunx skema init
+# or
+npx skema init
+```
+
+This creates `app/api/gemini/route.ts` (or `src/app/api/gemini/route.ts`) which handles annotation processing.
+
+### 3. Set up your Gemini API key
+
+Add your [Google AI API key](https://aistudio.google.com/apikey) to your `.env` file:
+
+```env
+GEMINI_API_KEY=your_api_key_here
+```
+
+### 4. Add Skema to your app
+
+Wrap your app with the Skema component (development only):
 
 ```tsx
 import { Skema } from 'skema-core';
 
-export default function App() {
+export default function Page() {
   return (
     <>
-      <YourApp />
-      {/* Only render in development */}
+      {/* Your page content */}
+      <main>...</main>
+      
+      {/* Skema overlay - only in development */}
       {process.env.NODE_ENV === 'development' && <Skema />}
     </>
   );
 }
 ```
+
+That's it! Press **⌘⇧E** (Cmd+Shift+E) to toggle the Skema overlay.
 
 ## Keyboard Shortcuts
 

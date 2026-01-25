@@ -35,6 +35,11 @@ export default function OverviewPage() {
             <p className="leading-relaxed text-muted-foreground">
               <ThemedLogo className="inline-block h-6 w-auto align-middle" /> is a React component library that provides a tldraw-powered drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
             </p>
+            <p className="mt-4 leading-relaxed text-muted-foreground">
+              We made website development drawable. Scribble on your localhost like a whiteboard,
+              point at what bothers you, and let AI do the actual coding part.
+              Because explaining "the button should be 50% left" is way harder than just... moving it.
+            </p>
           </section>
 
           {/* Key Concepts */}
@@ -65,7 +70,7 @@ export default function OverviewPage() {
             <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Architecture</h2>
             <div className="rounded-lg border border-border bg-muted/20 p-6">
               <pre className="font-mono text-sm leading-relaxed text-muted-foreground">
-{`skema/
+                {`skema/
 ├── packages/
 │   ├── skema-core/           # Main React component
 │   │   ├── src/

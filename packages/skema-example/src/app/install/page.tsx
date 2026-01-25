@@ -16,60 +16,66 @@ export default function InstallPage() {
             </p>
           </section>
 
-          {/* Package Install */}
+          {/* Step 1: Package Install */}
           <section className="mb-16">
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Package</h2>
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">1. Install Package</h2>
             <CodeBlock
               language="bash"
-              code={`# Using bun (recommended)
-bun add skema-core
-
-# Using npm
-npm install skema-core`}
+              code={`bun add skema-core
+# or: npm install skema-core`}
             />
-            <div className="mt-6 space-y-2 text-sm text-muted-foreground">
-              <p>Requires <strong className="text-foreground">React 19+</strong> and <strong className="text-foreground">Node.js 18+</strong></p>
-            </div>
+            <p className="mt-4 text-sm text-muted-foreground">
+              Requires <strong className="text-foreground">React 19+</strong> and <strong className="text-foreground">Next.js App Router</strong>
+            </p>
           </section>
 
-          {/* Quick Start */}
+          {/* Step 2: Create API Route */}
           <section className="mb-16">
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Basic Usage</h2>
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">2. Create API Route</h2>
+            <CodeBlock
+              language="bash"
+              code={`bunx skema init
+# or: npx skema init`}
+            />
+            <p className="mt-4 text-sm text-muted-foreground">
+              Creates <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">app/api/gemini/route.ts</code> to handle annotations.
+            </p>
+          </section>
+
+          {/* Step 3: Add API Key */}
+          <section className="mb-16">
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">3. Add Gemini API Key</h2>
+            <CodeBlock
+              language="bash"
+              code={`# .env
+GEMINI_API_KEY=your_api_key_here`}
+            />
+            <p className="mt-4 text-sm text-muted-foreground">
+              Get your key at{" "}
+              <a
+                href="https://aistudio.google.com/apikey"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                aistudio.google.com/apikey
+              </a>
+            </p>
+          </section>
+
+          {/* Step 4: Add Component */}
+          <section className="mb-16">
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">4. Add to Your App</h2>
             <CodeBlock
               language="tsx"
               code={`import { Skema } from 'skema-core';
 
-export default function App() {
+export default function Page() {
   return (
     <>
-      <YourApp />
+      <main>{/* Your content */}</main>
       {process.env.NODE_ENV === 'development' && <Skema />}
     </>
-  );
-}`}
-            />
-          </section>
-
-          {/* Next.js */}
-          <section className="mb-16">
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Next.js App Router</h2>
-            <CodeBlock
-              language="tsx"
-              code={`// app/layout.tsx
-import { Skema } from 'skema-core';
-
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body>
-        {children}
-        {process.env.NODE_ENV === 'development' && <Skema />}
-      </body>
-    </html>
   );
 }`}
             />
