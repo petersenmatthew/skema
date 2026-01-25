@@ -1,7 +1,6 @@
 import { spawn, execSync, type ChildProcess } from 'child_process';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Annotation } from '../types';
-
-// Store annotation ID -> git stash ref for undo functionality
 const annotationSnapshots = new Map<string, string>();
 
 /**
@@ -106,7 +105,7 @@ export interface ProjectContext {
 }
 
 export interface GeminiCLIEvent {
-  type: 'init' | 'message' | 'tool_use' | 'tool_result' | 'error' | 'result' | 'done';
+  type: 'init' | 'message' | 'tool_use' | 'tool_result' | 'error' | 'result' | 'done' | 'debug';
   timestamp?: string;
   content?: string;
   role?: 'user' | 'assistant';
@@ -123,13 +122,13 @@ export interface GeminiCLIEvent {
 export function buildPromptFromAnnotation(
   annotation: Partial<Annotation> & { comment?: string },
   projectContext?: ProjectContext,
-  options?: { fastMode?: boolean }
+  options?: { fastMode?: boolean; visionDescription?: string }
 ): string {
-  const fastMode = options?.fastMode ?? true;
+  const fastMode = options?.fastMode ?? false;
 
   // Handle drawing annotations specially - they generate new components
   if (annotation.type === 'drawing') {
-    return buildDrawingPrompt(annotation, projectContext);
+    return buildDrawingPrompt(annotation, projectContext, options?.visionDescription);
   }
 
   // Fast mode: minimal prompt for quick changes
@@ -151,37 +150,16 @@ export function buildPromptFromAnnotation(
     return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed.`;
   }
 
+  if (annotation.type === 'dom_selection') {
+    return buildForensicPrompt(annotation as Annotation & { computedStyles?: string; mousePosition?: any; comment?: string });
+  }
+
   // Detailed mode: full context
   let prompt = `Make this code change: "${annotation.comment || 'No specific comment provided'}"
 
 Element: `;
 
-  if (annotation.type === 'dom_selection') {
-    const domAnnotation = annotation as {
-      tagName?: string;
-      selector?: string;
-      elementPath?: string;
-      text?: string;
-      cssClasses?: string;
-      attributes?: Record<string, string>;
-      elements?: Array<{
-        tagName: string;
-        selector: string;
-        elementPath: string;
-        text?: string;
-      }>;
-    };
 
-    prompt += `<${domAnnotation.tagName?.toLowerCase() || 'unknown'}>`;
-    if (domAnnotation.selector) prompt += ` | selector: ${domAnnotation.selector}`;
-    if (domAnnotation.text) prompt += ` | text: "${domAnnotation.text.slice(0, 100)}"`;
-
-    if (domAnnotation.elements && domAnnotation.elements.length > 1) {
-      prompt += `\n${domAnnotation.elements.length} elements selected`;
-    }
-  } else if (annotation.type === 'drawing') {
-    prompt += `drawing area at (${annotation.boundingBox?.x}, ${annotation.boundingBox?.y})`;
-  }
 
   prompt += `\n\nMake minimal changes. No explanation needed.`;
 
@@ -189,28 +167,91 @@ Element: `;
 }
 
 /**
+ * Build a forensic-style prompt with detailed DOM context
+ */
+function buildForensicPrompt(annotation: Annotation & { computedStyles?: string; mousePosition?: any; comment?: string }): string {
+  if (annotation.type !== 'dom_selection') return '';
+
+  const {
+    tagName,
+    text,
+    elementPath,
+    boundingBox,
+    computedStyles,
+    comment,
+    elements,
+    isMultiSelect
+  } = annotation;
+
+  let header = '';
+
+  if (isMultiSelect && elements && elements.length > 0) {
+    const types = elements.map(e => `${e.tagName.toLowerCase()}: "${(e.text || '').slice(0, 20)}..."`).join(', ');
+    header = `### 1. ${elements.length} elements: ${types}`;
+  } else {
+    header = `### 1. 1 element: ${tagName.toLowerCase()}: "${(text || '').slice(0, 50)}..."`;
+  }
+
+  // Format position
+  const posStr = boundingBox
+    ? `x:${Math.round(boundingBox.x)}, y:${Math.round(boundingBox.y)} (${Math.round(boundingBox.width)}×${Math.round(boundingBox.height)}px)`
+    : 'unknown';
+
+  // Format annotation position if available
+  // We check for 'x' and 'y' directly on the annotation object as they might be merged from PendingAnnotation
+  const mouseX = (annotation as any).x;
+  const mouseY = (annotation as any).y;
+  const annotPosStr = (mouseX !== undefined && mouseY !== undefined)
+    ? `${typeof mouseX === 'number' ? mouseX.toFixed(1) + '%' : mouseX} from left, ${mouseY}px from top`
+    : 'unknown';
+
+  return `${header}
+*Forensic data shown for first element of selection*
+**Full DOM Path:** ${elementPath}
+**Position:** ${posStr}
+**Annotation at:** ${annotPosStr}
+**Computed Styles:** ${computedStyles || 'Not captured'}
+**Nearby Elements:** ${(annotation as any).nearbyElements?.map((e: any) => e.tagName).join(', ') || 'none'}
+**Feedback:** ${comment || 'No comment'}
+
+Make the change directly. No explanation needed.`;
+}
+
+/**
  * Build a specialized prompt for drawing annotations to generate React components
+ * Enhanced with Make Real-style prompting: image-based input, grid positioning, text extraction
  */
 function buildDrawingPrompt(
   annotation: Partial<Annotation> & { comment?: string },
-  projectContext?: ProjectContext
+  projectContext?: ProjectContext,
+  visionDescription?: string
 ): string {
   const drawingAnnotation = annotation as {
     boundingBox?: { x: number; y: number; width: number; height: number };
     drawingSvg?: string;
+    drawingImage?: string;
+    extractedText?: string;
+    gridConfig?: { color: string; size: number; labels: boolean };
     nearbyElements?: Array<{ selector: string; tagName: string; text?: string }>;
     comment?: string;
   };
 
   const bbox = drawingAnnotation.boundingBox;
-  const svg = drawingAnnotation.drawingSvg;
+  const hasImage = !!drawingAnnotation.drawingImage;
+  const extractedText = drawingAnnotation.extractedText;
   const nearbyElements = drawingAnnotation.nearbyElements || [];
   const comment = drawingAnnotation.comment || 'Create a component based on this drawing';
+  const gridSize = drawingAnnotation.gridConfig?.size || 100;
 
-  // Build position context
+  // Calculate grid cell reference for positioning
   let positionContext = '';
+  let gridCellRef = '';
   if (bbox) {
-    positionContext = `Position: ${Math.round(bbox.x)}px from left, ${Math.round(bbox.y)}px from top (${Math.round(bbox.width)}×${Math.round(bbox.height)}px area)`;
+    const col = Math.floor(bbox.x / gridSize);
+    const row = Math.floor(bbox.y / gridSize);
+    const colLabel = String.fromCharCode(65 + col); // 65 = 'A'
+    gridCellRef = `${colLabel}${row}`;
+    positionContext = `**Position:** Grid cell ${gridCellRef} (${Math.round(bbox.x)}px, ${Math.round(bbox.y)}px) — ${Math.round(bbox.width)}×${Math.round(bbox.height)}px area`;
   }
 
   // Build nearby elements context
@@ -220,39 +261,56 @@ function buildDrawingPrompt(
       .slice(0, 5)
       .map(el => `- <${el.tagName.toLowerCase()}>${el.text ? `: "${el.text.slice(0, 50)}"` : ''} (${el.selector})`)
       .join('\n');
-    nearbyContext = `\nNearby DOM elements (for placement reference):\n${elementList}`;
+    nearbyContext = `\n**Nearby DOM Elements (for placement reference):**\n${elementList}`;
   }
 
-  // Build SVG context - include the actual drawing
-  let svgContext = '';
-  if (svg) {
-    // Clean up SVG for inclusion in prompt (remove unnecessary whitespace)
-    const cleanSvg = svg.replace(/\s+/g, ' ').trim();
-    svgContext = `\n\nUser's sketch/drawing (SVG):\n\`\`\`svg\n${cleanSvg}\n\`\`\``;
+  // Build text extraction context
+  let textContext = '';
+  if (extractedText && extractedText.trim()) {
+    textContext = `\n**Text found in drawing (use as reference if hard to read):**\n${extractedText}`;
   }
 
-  // Construct the full prompt
-  const prompt = `Create a new React component based on this user sketch and add it to the page.
+  // Image reference note
+  let imageNote = hasImage
+    ? '\n**[Drawing image provided as base64 PNG with labeled grid overlay]**'
+    : '';
 
-User's request: "${comment}"
+  if (visionDescription) {
+    imageNote += `\n\n## Visual Analysis of Drawing\n${visionDescription}`;
+  }
 
-${positionContext}${nearbyContext}${svgContext}
+  // Construct the comprehensive prompt with Principal Front-End Engineer persona
+  const prompt = `You are a Principal Front-End Engineer with expertise in React and modern web development. Your task is to interpret a user's sketch/wireframe and create a polished, production-ready React component.
 
-Instructions:
-1. Analyze the sketch/drawing to understand what UI component the user wants
-2. Create a React component that matches the visual intent of the sketch
-3. Use inline styles or Tailwind CSS classes for styling
-4. Insert the component at the appropriate location in the page (near the specified position)
-5. If the sketch shows:
-   - A rectangle/box: Create a card, container, or button depending on context
-   - Text elements: Create headings, paragraphs, or labels
-   - A form layout: Create form inputs
-   - Icons or shapes: Use appropriate icons or SVG elements
-   - Navigation elements: Create nav links or menus
-6. Match the approximate size and position from the bounding box
-7. Make the component fit naturally with the existing page design
+## User's Request
+"${comment}"
 
-Make the changes directly. No explanation needed.`;
+## Drawing Context
+${positionContext}${textContext}${nearbyContext}${imageNote}
+
+## Your Process
+1. **Analyze the Sketch:** Understand the visual intent—what UI component does the user want?
+2. **Interpret, Don't Transcribe:** Elevate the low-fidelity drawing into a high-fidelity component. Choose appropriate spacing, colors, and typography that match modern design standards.
+3. **Infer Missing Details:** If something is underspecified, use your expertise to make the best choice. An informed decision is better than an incomplete component.
+
+## Implementation Guidelines
+- Create a React component with inline styles or Tailwind CSS classes
+- Match the approximate size and position (grid cell ${gridCellRef || 'as drawn'})
+- If the sketch shows:
+  - **Rectangle/box:** Card, container, button, or input field depending on context
+  - **Text elements:** Headings, paragraphs, or labels with appropriate hierarchy
+  - **Form layout:** Input fields with labels, proper spacing
+  - **Icons/shapes:** Use appropriate icons from lucide-react or inline SVGs
+  - **Navigation:** Nav links, menus, or breadcrumbs
+  - **Lists:** Ordered/unordered lists or grid layouts
+- Make the component fit naturally with the existing page design
+- Use semantic HTML and ARIA attributes where appropriate
+
+## Annotations
+- Any **red marks** in the drawing are instructions—follow them but don't render them
+- Text annotations describe intent or constraints
+
+Make the changes directly. Insert the component at the appropriate location in the page. No explanation needed.`;
 
   return prompt;
 }
@@ -374,6 +432,38 @@ export function spawnGeminiCLI(
 }
 
 /**
+ * Analyze an image using the Google Generative AI SDK (Gemini Vision)
+ */
+async function analyzeImageWithGemini(apiKey: string, base64Image: string, modelName: string = 'gemini-2.5-flash'): Promise<string> {
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: modelName });
+
+    // Clean base64 string if needed (remove data URI prefix)
+    const imageParts = [
+      {
+        inlineData: {
+          data: base64Image.replace(/^data:image\/\w+;base64,/, ''),
+          mimeType: 'image/png',
+        },
+      },
+    ];
+
+    const result = await model.generateContent([
+      "Analyze this UI wireframe sketch in extreme detail for a front-end developer. Describe every element, layout, spacing, icons, and text you see. Mention relative positions and hierarchy. Be distinct about what is drawn vs what might be background.",
+      ...imageParts,
+    ]);
+
+    const response = await result.response;
+    const text = response.text();
+    return text;
+  } catch (error) {
+    console.error('Failed to analyze image with Gemini Vision:', error);
+    return `[Extension Error] Failed to analyze drawing: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+/**
  * Create a streaming response for use in API routes (Next.js, Express, etc.)
  */
 export function createGeminiCLIStream(
@@ -381,17 +471,61 @@ export function createGeminiCLIStream(
   projectContext?: ProjectContext,
   options?: GeminiCLIOptions
 ): ReadableStream<Uint8Array> {
-  const prompt = buildPromptFromAnnotation(annotation, projectContext, { fastMode: options?.fastMode ?? true });
+  // We need to handle the prompt building inside logic because it might be async now
+  // But ReadableStream start controller can be async
 
   // Log the full prompt being sent to Gemini CLI
-  console.log('\n========== GEMINI CLI PROMPT ==========');
-  console.log(prompt);
-  console.log('========================================\n');
-
   const encoder = new TextEncoder();
 
   return new ReadableStream({
     async start(controller) {
+      const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
+      let visionDescription = '';
+
+      // Perform Image Analysis if needed
+      if (annotation.type === 'drawing' && (annotation as any).drawingImage && apiKey) {
+        // Send a "progress" event to the client
+        const progressEvent: GeminiCLIEvent = {
+          type: 'message',
+          role: 'assistant',
+          content: '🎨 Analyzing drawing image with Gemini Vision...',
+          timestamp: new Date().toISOString()
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(progressEvent)}\n\n`));
+
+        visionDescription = await analyzeImageWithGemini(apiKey, (annotation as any).drawingImage, options?.model || 'gemini-2.5-flash');
+
+        // Log the analysis result
+        const analysisEvent: GeminiCLIEvent = {
+          type: 'message',
+          role: 'assistant',
+          content: `👁️ Visual Analysis:\n${visionDescription}`,
+          timestamp: new Date().toISOString()
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(analysisEvent)}\n\n`));
+      }
+
+      const prompt = buildPromptFromAnnotation(
+        annotation,
+        projectContext,
+        {
+          fastMode: options?.fastMode ?? false,
+          visionDescription
+        }
+      );
+
+      console.log('\n========== GEMINI CLI PROMPT ==========');
+      console.log(prompt);
+      console.log('========================================\n');
+
+      // Send the prompt as a debug event so it shows up in client logs
+      const promptEvent: GeminiCLIEvent = {
+        type: 'debug',
+        content: `\n========== GEMINI CLI PROMPT ==========\n${prompt}\n========================================\n`,
+        timestamp: new Date().toISOString()
+      };
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(promptEvent)}\n\n`));
+
       const { events } = spawnGeminiCLI(prompt, options);
 
       for await (const event of events) {
@@ -419,7 +553,27 @@ export async function runGeminiCLI(
   response: string;
   events: GeminiCLIEvent[];
 }> {
-  const prompt = buildPromptFromAnnotation(annotation, projectContext, { fastMode: options?.fastMode ?? true });
+  const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
+  let visionDescription = '';
+
+  if (annotation.type === 'drawing' && (annotation as any).drawingImage && apiKey) {
+    visionDescription = await analyzeImageWithGemini(apiKey, (annotation as any).drawingImage, options?.model || 'gemini-2.5-flash');
+  }
+
+  const prompt = buildPromptFromAnnotation(
+    annotation,
+    projectContext,
+    {
+      fastMode: options?.fastMode ?? false,
+      visionDescription
+    }
+  );
+
+  // Log the full prompt being sent to Gemini CLI
+  console.log('\n========== GEMINI CLI PROMPT ==========');
+  console.log(prompt);
+  console.log('========================================\n');
+
   const { events: eventIterator } = spawnGeminiCLI(prompt, options);
 
   const events: GeminiCLIEvent[] = [];

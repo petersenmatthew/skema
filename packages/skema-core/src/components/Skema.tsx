@@ -25,6 +25,7 @@ import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotati
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
 import { createDOMSelection, shouldIgnoreElement } from '../utils/element-identification';
 import { AnnotationPopup, AnnotationPopupHandle } from './AnnotationPopup';
+import { blobToBase64, addGridToSvg, extractTextFromShapes } from '../lib/utils';
 
 // =============================================================================
 // Annotation Marker Component - Shows numbered markers for each annotation
@@ -793,7 +794,7 @@ export const Skema: React.FC<SkemaProps> = ({
       boundingBox: rect,
       isMultiSelect: hasDrawings,
       selections: [selection],
-      annotationType: 'dom_selection',
+      annotationType: hasDrawings ? 'drawing' : 'dom_selection',
       shapeIds: hasDrawings ? editorRef.current?.getSelectedShapeIds() as string[] : undefined,
     });
   }, [getSelectedDrawings]);
@@ -844,7 +845,7 @@ export const Skema: React.FC<SkemaProps> = ({
       boundingBox: combinedBounds,
       isMultiSelect: true,
       selections,
-      annotationType: 'dom_selection',
+      annotationType: hasDrawings ? 'drawing' : 'dom_selection',
       shapeIds: hasDrawings ? editorRef.current?.getSelectedShapeIds() as string[] : undefined,
     });
   }, [getSelectedDrawings]);
@@ -891,7 +892,7 @@ export const Skema: React.FC<SkemaProps> = ({
     } else if (pendingAnnotation.annotationType === 'drawing' && pendingAnnotation.shapeIds) {
       // Handle drawing annotation - extract SVG and nearby elements
       const bbox = pendingAnnotation.boundingBox!;
-      
+
       // Get nearby DOM elements for context
       const nearbyElements = pendingAnnotation.selections?.map(s => ({
         selector: s.selector,
@@ -1019,22 +1020,50 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           };
         }
       } else {
-        // Drawing annotation - extract SVG from shapes
+        // Drawing annotation - extract SVG, PNG image, and text from shapes
         const editor = editorRef.current;
         let drawingSvg: string | undefined;
-        
+        let drawingImage: string | undefined;
+        let extractedText: string | undefined;
+        const gridConfig = { color: '#0066FF', size: 100, labels: true };
+
         if (editor && pendingAnnotation.shapeIds && pendingAnnotation.shapeIds.length > 0) {
+          const shapeIds = pendingAnnotation.shapeIds as TLShapeId[];
+
           try {
             // Get SVG export of the drawing shapes
-            const svgResult = await editor.getSvgString(pendingAnnotation.shapeIds as TLShapeId[], {
-              padding: 10,
+            const svgResult = await editor.getSvgString(shapeIds, {
+              padding: 20,
               background: false,
             });
             if (svgResult?.svg) {
-              drawingSvg = svgResult.svg;
+              // Add grid overlay to SVG for positioning reference
+              drawingSvg = addGridToSvg(svgResult.svg, gridConfig);
             }
           } catch (e) {
             console.warn('[Skema] Failed to export drawing SVG:', e);
+          }
+
+          try {
+            // Get PNG image export for vision AI
+            const imageResult = await editor.toImage(shapeIds, {
+              format: 'png',
+              padding: 20,
+              background: true,
+            });
+            if (imageResult?.blob) {
+              drawingImage = await blobToBase64(imageResult.blob);
+            }
+          } catch (e) {
+            console.warn('[Skema] Failed to export drawing image:', e);
+          }
+
+          // Extract text from text/note shapes
+          try {
+            const shapes = shapeIds.map(id => editor.getShape(id)).filter(Boolean);
+            extractedText = extractTextFromShapes(shapes);
+          } catch (e) {
+            console.warn('[Skema] Failed to extract text from shapes:', e);
           }
         }
 
@@ -1054,6 +1083,9 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           timestamp: Date.now(),
           comment,
           drawingSvg,
+          drawingImage,
+          extractedText: extractedText || undefined,
+          gridConfig,
           nearbyElements,
         };
       }

@@ -100,6 +100,16 @@ export interface DrawingAnnotation {
   comment?: string;
   /** SVG representation of the drawing for AI processing */
   drawingSvg?: string;
+  /** Base64 PNG image of the drawing for vision AI */
+  drawingImage?: string;
+  /** Extracted text content from text shapes in the drawing */
+  extractedText?: string;
+  /** Grid configuration used for positioning */
+  gridConfig?: {
+    color: string;
+    size: number;
+    labels: boolean;
+  };
   /** Nearby DOM elements that the drawing may relate to */
   nearbyElements?: Array<{
     selector: string;
