@@ -1228,18 +1228,30 @@ export const Skema: React.FC<SkemaProps> = ({
   }, [isActive, pendingAnnotation, handleAnnotationCancel]);
 
   // Custom components
+  // Reference: https://tldraw.dev/examples/ui-components-hidden
   const components: TLComponents = {
     Toolbar: SkemaToolbar,
     Overlays: SkemaOverlays,
     // Hide background to make canvas transparent (so website shows through)
     Background: null,
-    // Hide some UI elements we don't need
+    // Hide UI elements we don't need
     SharePanel: null,
     MenuPanel: null,
     TopPanel: null,
     PageMenu: null,
     NavigationPanel: null,
     HelpMenu: null,
+    Minimap: null,
+    // Hide "Back to Content" button (HelperButtons contains this)
+    HelperButtons: null,
+    QuickActions: null,
+    ZoomMenu: null,
+    ActionsMenu: null,
+    DebugPanel: null,
+    DebugMenu: null,
+    // Hide canvas overlays
+    OnTheCanvas: null,
+    InFrontOfTheCanvas: null,
   };
 
   // UI overrides to add DOM picker and lasso select tools
@@ -1275,6 +1287,16 @@ export const Skema: React.FC<SkemaProps> = ({
         pointerEvents: 'none',
       }}
     >
+      {/* Hide tldraw's "Back to Content" button */}
+      <style>{`
+        .tlui-button[data-testid="back-to-content"],
+        .tlui-offscreen-indicator,
+        [class*="back-to-content"],
+        .tl-offscreen-indicator {
+          display: none !important;
+        }
+      `}</style>
+
       {/* tldraw overlay */}
       <div
         style={{
