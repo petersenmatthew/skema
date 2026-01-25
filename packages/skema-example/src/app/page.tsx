@@ -101,10 +101,10 @@ export default function Home() {
           </div>
           <div style={{ display: 'flex', gap: '24px' }}>
             <a href="#features" style={{ color: 'white' }}><span style={{
-                background: 'linear-gradient(to right, #FF0000, #FF7F7F)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}>Features</span></a>
+              background: 'linear-gradient(to right, #FF0000, #FF7F7F)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>Features</span></a>
             <a href="#about" style={{ color: 'white' }}>About</a>
             <a href="#contact" style={{ color: 'white' }}>Contact</a>
           </div>
@@ -131,7 +131,7 @@ export default function Home() {
         <p style={{ fontSize: '20px', marginBottom: '32px', maxWidth: '600px', color: '#666666' }}>
           A drawing-based website development tool that transforms how you annotate and communicate design changes.
         </p>
-        <div style={{ display: 'flex', gap: '16px', justifyContent: 'left' }}>
+        <div style={{ display: 'flex', gap: '16px', justifyContent: 'left', position: 'relative' }}>
           <button className="btn btn-primary">
             Get Started
           </button>
@@ -141,6 +141,18 @@ export default function Home() {
           >
             FAQ
           </button>
+          {/* Heart shape */}
+          <div style={{ position: 'absolute', left: '40px', top: '386px', width: '50px', height: '50px' }}>
+            <svg viewBox="0 0 24 24" fill="red" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 21.35L10.55 20.03C5.4 15.36 2 12.27 2 8.5C2 5.41 4.42 3 7.5 3C9.24 3 10.91 3.81 12 5.09C13.09 3.81 14.76 3 16.5 3C19.58 3 22 5.41 22 8.5C22 12.27 18.6 15.36 13.45 20.03L12 21.35Z"></path>
+            </svg>
+          </div>
+          {/* Checkmark shape */}
+          <div style={{ position: 'absolute', left: '100px', top: '386px', width: '50px', height: '50px' }}>
+            <svg viewBox="0 0 24 24" fill="green" xmlns="http://www.w3.org/2000/svg">
+              <path d="M9 16.17L4.83 12L3.41 13.41L9 19L21 7L19.59 5.59L9 16.17Z"></path>
+            </svg>
+          </div>
         </div>
       </section>
 
@@ -159,11 +171,11 @@ export default function Home() {
           backgroundClip: 'text',
           color: 'transparent',
         }}>
-                        <span style={{
-                          background: 'linear-gradient(to right, #6366F1, #3B82F6)',
-                          WebkitBackgroundClip: 'text',
-                          WebkitTextFillColor: 'transparent',
-                        }}>Features</span>        </h2>
+          <span style={{
+            background: 'linear-gradient(to right, #6366F1, #3B82F6)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+          }}>Features</span>        </h2>
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
@@ -215,12 +227,12 @@ export default function Home() {
         <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
           <h2 style={{ fontSize: '36px', marginBottom: '24px' }}>About Skema</h2>
           <p style={{ fontSize: '18px', color: '#475569', marginBottom: '16px' }}>
-            Skema is built for developers who want to communicate visual changes quickly and precisely. 
-            Instead of taking screenshots and annotating them in external tools, Skema lets you draw 
+            Skema is built for developers who want to communicate visual changes quickly and precisely.
+            Instead of taking screenshots and annotating them in external tools, Skema lets you draw
             directly on your live website.
           </p>
           <p style={{ fontSize: '18px', color: '#475569' }}>
-            All annotations are captured with DOM context, making it easy for AI agents or team 
+            All annotations are captured with DOM context, making it easy for AI agents or team
             members to understand exactly what you mean.
           </p>
         </div>
@@ -327,3 +339,4 @@ export default function Home() {
     </main>
   );
 }
+
