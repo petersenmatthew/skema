@@ -1,7 +1,15 @@
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { Annotation, NearbyElement, ProjectStyleContext, ViewportInfo } from '../types';
-import { getGridCellReference } from '../lib/utils';
+import type { Annotation } from '../types';
+
+// Import prompts from dedicated prompts file
+import {
+  buildFastDomSelectionPrompt,
+  buildDetailedDomSelectionPrompt,
+  buildGesturePrompt,
+  buildDrawingToCodePrompt,
+  IMAGE_ANALYSIS_PROMPT,
+} from './prompts';
 
 // Store annotation ID -> git stash ref for undo functionality
 const annotationSnapshots = new Map<string, string>();
@@ -121,206 +129,93 @@ export interface GeminiCLIEvent {
 
 /**
  * Build a prompt for Gemini CLI from an annotation
+ *
+ * @see /server/prompts.ts for the actual prompt templates
  */
 export function buildPromptFromAnnotation(
   annotation: Partial<Annotation> & { comment?: string },
-  projectContext?: ProjectContext,
+  _projectContext?: ProjectContext,
   options?: { fastMode?: boolean; visionDescription?: string }
 ): string {
   const fastMode = options?.fastMode ?? true;
 
-  // Handle drawing annotations specially - they generate new components
+  // Handle drawing annotations - uses the comprehensive drawing-to-code prompt
   if (annotation.type === 'drawing') {
-    return buildDrawingPrompt(annotation, projectContext, options?.visionDescription);
+    const drawingAnnotation = annotation as {
+      boundingBox?: { x: number; y: number; width: number; height: number };
+      drawingSvg?: string;
+      drawingImage?: string;
+      extractedText?: string;
+      gridConfig?: { color: string; size: number; labels: boolean };
+      viewport?: { width: number; height: number; scrollX: number; scrollY: number };
+      projectStyles?: any;
+      nearbyElements?: any[];
+      comment?: string;
+    };
+
+    return buildDrawingToCodePrompt({
+      comment: drawingAnnotation.comment || 'Create a component based on this drawing',
+      boundingBox: drawingAnnotation.boundingBox,
+      drawingSvg: drawingAnnotation.drawingSvg,
+      drawingImage: drawingAnnotation.drawingImage,
+      extractedText: drawingAnnotation.extractedText,
+      gridConfig: drawingAnnotation.gridConfig,
+      viewport: drawingAnnotation.viewport,
+      projectStyles: drawingAnnotation.projectStyles,
+      nearbyElements: drawingAnnotation.nearbyElements,
+      visionDescription: options?.visionDescription,
+    });
   }
+
+  // Handle gesture annotations
+  if (annotation.type === 'gesture') {
+    const gestureAnnotation = annotation as { gesture?: string; boundingBox?: { x: number; y: number } };
+    return buildGesturePrompt({
+      comment: annotation.comment || 'No specific comment provided',
+      gesture: gestureAnnotation.gesture,
+      boundingBox: gestureAnnotation.boundingBox,
+    });
+  }
+
+  // Handle DOM selection annotations
+  const domAnnotation = annotation as {
+    tagName?: string;
+    selector?: string;
+    elementPath?: string;
+    text?: string;
+    cssClasses?: string;
+    attributes?: Record<string, string>;
+    elements?: Array<{
+      tagName: string;
+      selector: string;
+      elementPath: string;
+      text?: string;
+    }>;
+  };
 
   // Fast mode: minimal prompt for quick changes
   if (fastMode) {
-    const selector = (annotation as { selector?: string }).selector || '';
-    const text = (annotation as { text?: string }).text || '';
-    const tag = (annotation as { tagName?: string }).tagName?.toLowerCase() || '';
-
-    // Build a very concise prompt
-    let target = '';
-    if (text) {
-      target = `"${text.slice(0, 50)}"`;
-    } else if (selector) {
-      target = `\`${selector}\``;
-    } else if (tag) {
-      target = `<${tag}>`;
-    }
-
-    return `${annotation.comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. CRITICAL: Do NOT create new files. Only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line. IMPORTANT: Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.`;
+    return buildFastDomSelectionPrompt({
+      comment: annotation.comment || 'No specific comment provided',
+      selector: domAnnotation.selector,
+      text: domAnnotation.text,
+      tagName: domAnnotation.tagName,
+    });
   }
 
   // Detailed mode: full context
-  let prompt = `Make this code change: "${annotation.comment || 'No specific comment provided'}"
-
-Element: `;
-
-  if (annotation.type === 'dom_selection') {
-    const domAnnotation = annotation as {
-      tagName?: string;
-      selector?: string;
-      elementPath?: string;
-      text?: string;
-      cssClasses?: string;
-      attributes?: Record<string, string>;
-      elements?: Array<{
-        tagName: string;
-        selector: string;
-        elementPath: string;
-        text?: string;
-      }>;
-    };
-
-    prompt += `<${domAnnotation.tagName?.toLowerCase() || 'unknown'}>`;
-    if (domAnnotation.selector) prompt += ` | selector: ${domAnnotation.selector}`;
-    if (domAnnotation.text) prompt += ` | text: "${domAnnotation.text.slice(0, 100)}"`;
-
-    if (domAnnotation.elements && domAnnotation.elements.length > 1) {
-      prompt += `\n${domAnnotation.elements.length} elements selected`;
-    }
-  } else if (annotation.type === 'gesture') {
-    const gestureAnnotation = annotation as { gesture?: string; boundingBox?: { x: number; y: number } };
-    prompt += `gesture: ${gestureAnnotation.gesture || 'unknown'} at (${gestureAnnotation.boundingBox?.x}, ${gestureAnnotation.boundingBox?.y})`;
-  } else {
-    // Fallback for any other annotation type
-    prompt += `annotation at (${annotation.boundingBox?.x}, ${annotation.boundingBox?.y})`;
-  }
-
-  prompt += `\n\nMake minimal changes. CRITICAL: Do NOT create new files - only edit existing files. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line. IMPORTANT: Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.`;
-
-  return prompt;
+  return buildDetailedDomSelectionPrompt({
+    comment: annotation.comment || 'No specific comment provided',
+    tagName: domAnnotation.tagName,
+    selector: domAnnotation.selector,
+    text: domAnnotation.text,
+    elementPath: domAnnotation.elementPath,
+    cssClasses: domAnnotation.cssClasses,
+    attributes: domAnnotation.attributes,
+    elements: domAnnotation.elements,
+  });
 }
 
-/**
- * Build a specialized prompt for drawing annotations to generate React components
- */
-function buildDrawingPrompt(
-  annotation: Partial<Annotation> & { comment?: string },
-  projectContext?: ProjectContext,
-  visionDescription?: string
-): string {
-  const drawingAnnotation = annotation as {
-    boundingBox?: { x: number; y: number; width: number; height: number };
-    drawingSvg?: string;
-    drawingImage?: string;
-    extractedText?: string;
-    gridConfig?: { color: string; size: number; labels: boolean };
-    viewport?: ViewportInfo;
-    projectStyles?: ProjectStyleContext;
-    nearbyElements?: NearbyElement[];
-    comment?: string;
-  };
-
-  const bbox = drawingAnnotation.boundingBox;
-  const nearbyElements = drawingAnnotation.nearbyElements || [];
-  const extractedText = drawingAnnotation.extractedText;
-  const comment = drawingAnnotation.comment || 'Create a component based on this drawing';
-  const hasImage = !!drawingAnnotation.drawingImage;
-  const gridSize = drawingAnnotation.gridConfig?.size || 100;
-
-  // Build grid cell reference for positioning
-  let gridCellRef = '';
-  if (bbox) {
-    gridCellRef = getGridCellReference(bbox.x, bbox.y, gridSize);
-  }
-
-  // Build position context - focus on relative positioning, not absolute values
-  let positionContext = '';
-  if (bbox && drawingAnnotation.viewport) {
-    const vp = drawingAnnotation.viewport;
-    const relX = ((bbox.x / vp.width) * 100).toFixed(1);
-    const relY = ((bbox.y / vp.height) * 100).toFixed(1);
-    positionContext = `**Drawing Location:** Approximately ${relX}% from left, ${relY}% from top of viewport`;
-    if (gridCellRef) {
-      positionContext += ` (grid cell ${gridCellRef})`;
-    }
-  } else if (bbox) {
-    positionContext = `**Drawing Area:** ${Math.round(bbox.width)}×${Math.round(bbox.height)}px`;
-  }
-
-  // Build nearby elements context with style info
-  let nearbyContext = '';
-  if (nearbyElements.length > 0) {
-    const elementList = nearbyElements
-      .slice(0, 5)
-      .map(el => {
-        let desc = `- <${el.tagName.toLowerCase()}>`;
-        if (el.text) desc += `: "${el.text.slice(0, 50)}"`;
-        if (el.className) desc += ` (class: ${el.className.slice(0, 50)})`;
-        desc += ` (${el.selector})`;
-        return desc;
-      })
-      .join('\n');
-    nearbyContext = `\n**Nearby DOM Elements (for placement reference):**\n${elementList}`;
-  }
-
-  // Build text extraction context
-  let textContext = '';
-  if (extractedText && extractedText.trim()) {
-    textContext = `\n**Text found in drawing (use as reference if hard to read):**\n${extractedText}`;
-  }
-
-  // Image reference note
-  let imageNote = hasImage
-    ? '\n**[Drawing image provided as base64 PNG with labeled grid overlay]**'
-    : '';
-
-  if (visionDescription) {
-    imageNote += `\n\n## Visual Analysis of Drawing\n${visionDescription}`;
-  }
-
-  // Construct the comprehensive prompt - Principal Front-End Engineer persona
-  // IMPORTANT: Do NOT focus on pixel coordinates or absolute positioning
-  const prompt = `Your task is to interpret a user's sketch/wireframe and turn it into code that is integrated in the codebase.
-
-## User's Request
-"${comment}"
-
-## Drawing Context
-${positionContext}${textContext}${nearbyContext}${imageNote}
-
-## Your Process
-1. **Analyze the Sketch:** Understand the visual intent—what UI component does the user want?
-2. **Interpret, Don't Transcribe:** Elevate the low-fidelity drawing into a high-fidelity component. Choose appropriate spacing, colors, and typography that match modern design standards.
-3. **Infer Missing Details:** If something is underspecified, use your expertise to make the best choice. An informed decision is better than an incomplete component.
-
-## Implementation Guidelines
-- **CRITICAL: DO NOT CREATE ANY NEW FILES. NEVER CREATE NEW FILES. You must ONLY edit existing files.**
-- Add your code directly inline within the existing JSX of the page file - do NOT create separate component files.
-- DO NOT Modify anything other than react code, and don't run any commands. You won't need to. 
-- Write the UI as inline JSX elements (divs, sections, etc.) directly in the return statement - NOT as a separate component definition
-- Use Tailwind CSS classes for styling (the project uses Tailwind)
-- Do NOT use hardcoded pixel positions or absolute coordinates - integrate naturally with existing page flow
-- Use flexbox, grid, or relative positioning to place the component appropriately
-- If the sketch shows:
-  - **Rectangle/box:** Card, container, button, or input field depending on context
-  - **Text elements:** Headings, paragraphs, or labels with appropriate hierarchy
-  - **Form layout:** Input fields with labels, proper spacing
-  - **Icons/shapes:** Use appropriate icons from lucide-react or inline SVGs (but DO NOT add new imports mid-file)
-  - **Navigation:** Nav links, menus, or breadcrumbs
-  - **Lists:** Ordered/unordered lists or grid layouts
-- Make the UI fit naturally with the existing page design
-- Style it nicely and according to the existing codebase
-- Use semantic HTML and ARIA attributes where appropriate
-- **NEVER add import statements inside JSX or in the middle of a file - all imports must be at the very top of the file**
-- If you need a new import, add it at the TOP of the file with the other imports, then use it in the JSX below
-
-Make the changes directly. Insert the UI elements inline at the appropriate location in the page. No explanation needed.
-
-IMPORTANT RULES TO AVOID ERRORS:
-1. **NEVER CREATE NEW FILES** - Do NOT create new component files, utility files, or any other files. Write everything inline in the existing file
-2. You do not need to update package.json or anything, just add / edit the react component.
-3. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
-4. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
-5. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports
-6. DONT MAKE ANY CHANGES THAT WOULD RESULT IN A Build Error
-7. **JSX SYNTAX VALIDATION** - ALWAYS ensure every JSX tag is properly closed. Every opening tag like <div>, <a>, <span>, <button> MUST have a matching closing tag </div>, </a>, </span>, </button>. Self-closing tags like <img />, <input />, <br /> must end with />. Before finishing, mentally verify all tag pairs are balanced.`;
-
-  return prompt;
-}
 
 /**
  * Spawn Gemini CLI and return an async iterator of events
@@ -440,6 +335,8 @@ export function spawnGeminiCLI(
 
 /**
  * Analyze an image using the Google Generative AI SDK (Gemini Vision)
+ *
+ * @see /server/prompts.ts for IMAGE_ANALYSIS_PROMPT
  */
 async function analyzeImageWithGemini(apiKey: string, base64Image: string, modelName: string = 'gemini-2.5-flash'): Promise<string> {
   try {
@@ -456,24 +353,8 @@ async function analyzeImageWithGemini(apiKey: string, base64Image: string, model
       },
     ];
 
-    const imageAnalysisPrompt = `
-Analyze this UI wireframe sketch in some detail (not too long) for a front-end developer.
-
-Describe every element, layout, spacing, icons, and text you see.
-Focus on whats apparent, don't overthink it.
-Mention relative positions and hierarchy.
-Be distinct about what is drawn vs what might be background.
-
-Do NOT focus on exact pixel coordinates or absolute positions - describe layouts 
-in terms of relative positioning (left/right/top/bottom, centered, evenly spaced, etc.).
-
-It is expected that they will be rough draft's / hand-drawn things. Interpret the drawing and its goals as best as you can.
-DO NOT MENTION THAT THINGS HAVE "Hand-sketched" or "Hand-drawn" vibes. Make assumptions of what they were trying to do.
-Just FYI, this gets passed onto a generator to generate the actual code of modern UI componenents.
-`.trim();
-
     const result = await model.generateContent([
-      imageAnalysisPrompt,
+      IMAGE_ANALYSIS_PROMPT,
       ...imageParts,
     ]);
 
