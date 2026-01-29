@@ -2,864 +2,49 @@
 // Skema - Main Drawing Overlay Component
 // =============================================================================
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Tldraw,
-  TLComponents,
-  TLUiOverrides,
-  TldrawOverlays,
-  useTools,
-  useIsToolSelected,
-  useEditor,
-  useValue,
   Editor,
   TLShapeId,
   StateNode,
   TLClickEventInfo,
   ArrowShapeKindStyle,
-  TLDrawShape,
 } from 'tldraw';
 import 'tldraw/tldraw.css';
 
-import { LassoSelectTool, LassoingState } from '../tools/LassoSelectTool';
+// Tools
+import { LassoSelectTool } from '../tools/LassoSelectTool';
+
+// Types
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotation } from '../types';
+
+// Utils
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
-import { 
-  isRealtimeScribble, 
-  findOverlappingShapesFromBounds, 
-  getPointsBounds,
-  type Point as GesturePoint 
-} from '../utils/gesture-recognizer';
 import {
   createDOMSelection,
   shouldIgnoreElement,
   findNearbyElementsWithStyles,
   extractProjectStyleContext,
 } from '../utils/element-identification';
-import { AnnotationPopup, AnnotationPopupHandle } from './AnnotationPopup';
 import { blobToBase64, addGridToSvg, extractTextFromShapes } from '../lib/utils';
 
-// =============================================================================
-// Annotation Marker Component - Shows numbered markers for each annotation
-// =============================================================================
+// Extracted Components
+import { SkemaToolbar } from './toolbar/SkemaToolbar';
+import { AnnotationMarkersLayer } from './annotations/AnnotationMarker';
+import { AnnotationsSidebar } from './annotations/AnnotationsSidebar';
+import { SelectionOverlay } from './overlays/SelectionOverlay';
+import { ProcessingOverlay } from './overlays/ProcessingOverlay';
+import { AnnotationPopup, AnnotationPopupHandle } from './AnnotationPopup';
 
-interface AnnotationMarkerProps {
-  annotation: Annotation;
-  index: number;
-  scrollOffset: { x: number; y: number };
-  onHover: (id: string | null) => void;
-  onClick: (annotation: Annotation) => void;
-  isHovered: boolean;
-  accentColor?: string;
-}
+// Extracted Hooks
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useScrollSync, useWheelIntercept } from '../hooks/useScrollSync';
+import { useShapePersistence } from '../hooks/useShapePersistence';
+import { useScribbleDelete } from '../hooks/useScribbleDelete';
 
-const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
-  annotation,
-  index,
-  scrollOffset,
-  onHover,
-  onClick,
-  isHovered,
-  accentColor = '#3b82f6',
-}) => {
-  // Get position based on annotation type
-  let markerX: number;
-  let markerY: number;
-
-  if (annotation.type === 'dom_selection') {
-    const sel = annotation as DOMSelection;
-    markerX = sel.boundingBox.x + sel.boundingBox.width / 2;
-    markerY = sel.boundingBox.y;
-  } else if (annotation.type === 'drawing') {
-    markerX = annotation.boundingBox.x + annotation.boundingBox.width / 2;
-    markerY = annotation.boundingBox.y;
-  } else {
-    markerX = annotation.boundingBox.x + annotation.boundingBox.width / 2;
-    markerY = annotation.boundingBox.y;
-  }
-
-  // Convert to viewport coordinates
-  const viewportX = markerX - scrollOffset.x;
-  const viewportY = markerY - scrollOffset.y - 12; // Position above the element
-
-  const isDrawing = annotation.type === 'drawing';
-  const markerColor = isDrawing ? '#8B5CF6' : accentColor; // Purple for drawings
-
-  // Get comment for tooltip
-  const comment = annotation.type === 'dom_selection'
-    ? (annotation as DOMSelection).comment
-    : undefined;
-  const elementName = annotation.type === 'dom_selection'
-    ? (annotation as DOMSelection).tagName
-    : 'Drawing';
-
-  return (
-    <div
-      data-skema="annotation-marker"
-      style={{
-        position: 'fixed',
-        left: viewportX,
-        top: viewportY,
-        transform: 'translate(-50%, -100%)',
-        zIndex: 999998,
-        pointerEvents: 'auto',
-      }}
-    >
-      {/* Marker circle */}
-      <div
-        style={{
-          width: isHovered ? 26 : 22,
-          height: isHovered ? 26 : 22,
-          borderRadius: '50%',
-          backgroundColor: isHovered ? '#ef4444' : markerColor,
-          color: 'white',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 11,
-          fontWeight: 600,
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          cursor: 'pointer',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-          transition: 'all 0.15s ease',
-          userSelect: 'none',
-        }}
-        onMouseEnter={() => onHover(annotation.id)}
-        onMouseLeave={() => onHover(null)}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick(annotation);
-        }}
-      >
-        {isHovered ? '×' : index + 1}
-      </div>
-
-      {/* Tooltip on hover */}
-      {isHovered && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            bottom: '100%',
-            transform: 'translateX(-50%)',
-            marginBottom: 8,
-            padding: '8px 12px',
-            backgroundColor: '#1a1a1a',
-            borderRadius: 8,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            whiteSpace: 'nowrap',
-            maxWidth: 200,
-            zIndex: 999999,
-          }}
-        >
-          <div style={{
-            fontSize: 11,
-            color: 'rgba(255,255,255,0.6)',
-            marginBottom: comment ? 4 : 0,
-          }}>
-            {elementName}
-          </div>
-          {comment && (
-            <div style={{
-              fontSize: 12,
-              color: 'white',
-              whiteSpace: 'normal',
-              wordBreak: 'break-word',
-            }}>
-              {comment.length > 50 ? comment.slice(0, 50) + '...' : comment}
-            </div>
-          )}
-          <div style={{
-            fontSize: 10,
-            color: 'rgba(255,255,255,0.4)',
-            marginTop: 4,
-          }}>
-            Click to delete
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Annotation markers layer
-const AnnotationMarkersLayer: React.FC<{
-  annotations: Annotation[];
-  scrollOffset: { x: number; y: number };
-  hoveredMarkerId: string | null;
-  onHover: (id: string | null) => void;
-  onDelete: (annotation: Annotation) => void;
-}> = ({ annotations, scrollOffset, hoveredMarkerId, onHover, onDelete }) => {
-  return (
-    <>
-      {annotations.map((annotation, index) => (
-        <AnnotationMarker
-          key={annotation.id}
-          annotation={annotation}
-          index={index}
-          scrollOffset={scrollOffset}
-          onHover={onHover}
-          onClick={onDelete}
-          isHovered={hoveredMarkerId === annotation.id}
-        />
-      ))}
-    </>
-  );
-};
-
-// =============================================================================
-// Custom Icon Components for Toolbar
-// =============================================================================
-
-const SelectIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
-  <svg width="42" height="42" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Red/Orange triangle background */}
-    <path
-      d="M11.268 3C12.0378 1.6667 13.9623 1.6667 14.7321 3L25.1244 21C25.8942 22.3333 24.9319 24 23.3923 24H2.6077C1.0681 24 0.1058 22.3333 0.8756 21L11.268 3Z"
-      fill="#F24E1E"
-      opacity={isSelected ? 1 : 0.7}
-    />
-    {/* Cursor/pointer icon */}
-    <path
-      d="M9 10L9 18.5L11.5 16L14 20L15.5 19L13 15L16 14.5L9 10Z"
-      fill="white"
-    />
-  </svg>
-);
-
-const DrawIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
-  <svg width="42" height="42" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="25" height="25" rx="2" fill={isSelected ? '#00C851' : '#00C851'} opacity={isSelected ? 1 : 0.7} />
-    <g transform="translate(12.5, 12.5) scale(1.4) translate(-12.5, -12.5)">
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M13.6919 10.2852L14.2593 9.6908L14.8282 10.2864L14.2605 10.8808L13.6919 10.2852ZM9.5682 15.7944L8.9992 15.1988L13.1233 10.8808L13.6919 11.476L9.5682 15.7944ZM14.3284 8.5L8 15.1988V16.5H9.5682L16 10.0436L14.3284 8.5Z"
-        fill="white"
-      />
-    </g>
-  </svg>
-);
-
-const LassoIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
-  <svg width="42" height="42" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="25" height="25" rx="12.5" fill={isSelected ? '#2C7FFF' : '#2C7FFF'} opacity={isSelected ? 1 : 0.7} />
-    <g transform="translate(12.5, 12.5) scale(1.4) translate(-12.5, -12.5)">
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M9.219 11.3C9.219 10.8021 9.504 10.3117 10.043 9.9297C10.582 9.5484 11.347 9.3 12.211 9.3C13.074 9.3 13.839 9.5484 14.378 9.9297C14.918 10.3117 15.202 10.8021 15.202 11.3C15.202 11.7979 14.918 12.2882 14.378 12.6702C13.839 13.0515 13.074 13.2999 12.211 13.2999C12.005 13.2999 11.805 13.2859 11.612 13.2591C11.586 12.5417 10.887 12.0999 10.216 12.0999C9.988 12.0999 9.768 12.147 9.572 12.234C9.339 11.9444 9.219 11.625 9.219 11.3ZM12.211 14.0999C11.908 14.0999 11.614 14.074 11.331 14.0249C11.298 14.0629 11.262 14.0988 11.224 14.1325C11.226 14.154 11.228 14.1774 11.229 14.2026C11.232 14.3182 11.216 14.4769 11.137 14.6456C10.97 15.0066 10.586 15.2824 9.919 15.3874C9.091 15.5175 8.878 15.7607 8.827 15.8497C8.8 15.8961 8.797 15.9328 8.798 15.9542C8.798 15.9629 8.799 15.9695 8.8 15.973C8.805 15.9901 8.81 16.0079 8.813 16.026C8.833 16.1321 8.809 16.2395 8.751 16.3254C8.718 16.3733 8.675 16.4145 8.623 16.445C8.584 16.4681 8.54 16.4847 8.494 16.4932C8.447 16.502 8.4 16.5021 8.355 16.4944C8.296 16.4846 8.242 16.4619 8.195 16.4294C8.148 16.3972 8.108 16.3549 8.078 16.304C8.063 16.278 8.05 16.2501 8.041 16.2208C8.04 16.217 8.038 16.2128 8.037 16.2083C8.032 16.1931 8.027 16.1741 8.022 16.1517C8.012 16.1071 8.002 16.0477 8 15.977C7.996 15.8338 8.023 15.6452 8.136 15.4492C8.365 15.0533 8.87 14.7426 9.795 14.5971C9.958 14.5714 10.079 14.5362 10.167 14.4992C9.499 14.478 8.82 14.0237 8.82 13.2999C8.82 13.0999 8.876 12.9166 8.969 12.758C8.629 12.344 8.421 11.8466 8.421 11.3C8.421 10.4724 8.896 9.7627 9.583 9.2761C10.272 8.7888 11.202 8.5 12.211 8.5C13.219 8.5 14.15 8.7888 14.838 9.2761C15.526 9.7627 16 10.4724 16 11.3C16 12.1275 15.526 12.8372 14.838 13.3238C14.15 13.8111 13.219 14.0999 12.211 14.0999ZM9.754 13.0514C9.859 12.9649 10.021 12.8999 10.216 12.8999C10.634 12.8999 10.815 13.1577 10.815 13.2999C10.815 13.3371 10.806 13.3739 10.789 13.4108C10.757 13.4794 10.69 13.5552 10.58 13.6136C10.482 13.666 10.357 13.6999 10.216 13.6999C9.798 13.6999 9.618 13.4422 9.618 13.2999C9.618 13.2236 9.655 13.1338 9.754 13.0514Z"
-        fill="white"
-      />
-    </g>
-  </svg>
-);
-
-const EraseIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
-  <svg width="50" height="42" viewBox="0 0 30 25" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Yellow parallelogram background */}
-    <path
-      d="M0.308 1.2407C0.151 0.61 0.628 0 1.278 0H23.664C24.118 0 24.516 0.3065 24.631 0.746L30.671 23.746C30.837 24.38 30.359 25 29.704 25H6.982C6.523 25 6.122 24.6868 6.012 24.2407L0.308 1.2407Z"
-      fill="#FFBA00"
-      opacity={isSelected ? 1 : 0.7}
-    />
-    {/* Eraser icon - proper diagonal orientation (down-left to up-right) */}
-    <g transform="translate(15, 12.5)">
-      <g transform="rotate(-45)">
-        <rect x="-6" y="-3" width="12" height="6" rx="1" fill="none" stroke="white" strokeWidth="1.5" />
-        <line x1="-2" y1="-3" x2="-2" y2="3" stroke="white" strokeWidth="1.5" />
-      </g>
-    </g>
-  </svg>
-);
-
-const ShapesIcon: React.FC<{ isSelected?: boolean }> = ({ isSelected }) => (
-  <svg width="42" height="42" viewBox="0 0 25 25" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Orange star */}
-    <path
-      d="M12.253 0.8403C12.65 0.393 13.35 0.393 13.747 0.8403L16.628 4.0796C16.805 4.2791 17.055 4.3993 17.321 4.4136L21.65 4.6461C22.248 4.6782 22.684 5.2247 22.582 5.8146L21.845 10.0863C21.8 10.3493 21.862 10.6196 22.017 10.8369L24.534 14.366C24.881 14.8533 24.726 15.5348 24.201 15.8231L20.402 17.9105C20.168 18.0391 19.995 18.2558 19.922 18.5125L18.732 22.6808C18.568 23.2564 17.938 23.5596 17.386 23.3292L13.385 21.6606C13.139 21.5578 12.861 21.5578 12.615 21.6606L8.614 23.3292C8.062 23.5596 7.432 23.2564 7.268 22.6808L6.078 18.5125C6.005 18.2558 5.832 18.0391 5.598 17.9105L1.799 15.8231C1.274 15.5348 1.119 14.8533 1.466 14.366L3.983 10.8369C4.138 10.6196 4.2 10.3493 4.155 10.0863L3.418 5.8146C3.316 5.2247 3.752 4.6782 4.35 4.6461L8.679 4.4136C8.945 4.3993 9.195 4.2791 9.372 4.0796L12.253 0.8403Z"
-      fill="#FF6800"
-      opacity={isSelected ? 1 : 0.7}
-    />
-    {/* Shapes: rectangle, circle, triangle (white) */}
-    <g transform="translate(5.5, 7)">
-      {/* Small rectangle */}
-      <rect x="0" y="6" width="4" height="4" rx="0.5" fill="white" />
-      {/* Circle */}
-      <circle cx="10" cy="4" r="3" fill="white" />
-      {/* Triangle */}
-      <path d="M5 11L7.5 6.5L10 11H5Z" fill="white" />
-    </g>
-  </svg>
-);
-
-// =============================================================================
-// Custom Toolbar Button Component
-// =============================================================================
-
-interface ToolbarButtonProps {
-  onClick: () => void;
-  isSelected: boolean;
-  icon: React.ReactNode;
-  label: string;
-}
-
-const ToolbarButton: React.FC<ToolbarButtonProps> = ({ onClick, isSelected, icon, label }) => {
-  const handleClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onClick();
-  };
-
-  return (
-    <button
-      onClick={handleClick}
-      title={label}
-      type="button"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 56,
-        height: 56,
-        border: 'none',
-        borderRadius: 11,
-        backgroundColor: isSelected ? 'rgba(255,255,255,0.15)' : 'transparent',
-        cursor: 'pointer',
-        transition: 'background-color 0.15s ease',
-        pointerEvents: 'auto',
-      }}
-    >
-      {icon}
-    </button>
-  );
-};
-
-// =============================================================================
-// Custom Skema Toolbar
-// =============================================================================
-
-const SkemaToolbar: React.FC = () => {
-  const editor = useEditor();
-  const tools = useTools();
-
-  const isSelectSelected = useIsToolSelected(tools['select']);
-  const isDrawSelected = useIsToolSelected(tools['draw']);
-  const isLassoSelected = useIsToolSelected(tools['lasso-select']);
-  const isEraseSelected = useIsToolSelected(tools['eraser']);
-  const isGeoSelected = useIsToolSelected(tools['geo']);
-
-  return (
-    <div
-      data-skema="toolbar"
-      style={{
-        position: 'absolute',
-        bottom: 16,
-        left: '50%',
-        transform: 'translateX(-50%)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 11,
-        padding: '11px 17px',
-        backgroundColor: 'white',
-        borderRadius: 36,
-        boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-        pointerEvents: 'auto',
-        zIndex: 99999,
-      }}
-    >
-      <ToolbarButton
-        onClick={() => editor.setCurrentTool('select')}
-        isSelected={isSelectSelected}
-        icon={<SelectIcon isSelected={isSelectSelected} />}
-        label="Select (S)"
-      />
-      <ToolbarButton
-        onClick={() => editor.setCurrentTool('draw')}
-        isSelected={isDrawSelected}
-        icon={<DrawIcon isSelected={isDrawSelected} />}
-        label="Draw (D)"
-      />
-      <ToolbarButton
-        onClick={() => editor.setCurrentTool('lasso-select')}
-        isSelected={isLassoSelected}
-        icon={<LassoIcon isSelected={isLassoSelected} />}
-        label="Lasso Select (L)"
-      />
-      <ToolbarButton
-        onClick={() => editor.setCurrentTool('eraser')}
-        isSelected={isEraseSelected}
-        icon={<EraseIcon isSelected={isEraseSelected} />}
-        label="Eraser (E)"
-      />
-      {/* Shapes tool - for drawing geometric shapes */}
-      <ToolbarButton
-        onClick={() => editor.setCurrentTool('geo')}
-        isSelected={isGeoSelected}
-        icon={<ShapesIcon isSelected={isGeoSelected} />}
-        label="Shapes (G)"
-      />
-    </div>
-  );
-};
-
-// Lasso overlay component - renders the lasso path while drawing
-const LassoOverlay: React.FC = () => {
-  const editor = useEditor();
-
-  // Reactively get lasso points from the tool state
-  const lassoPoints = useValue(
-    'lasso points',
-    () => {
-      if (!editor.isIn('lasso-select.lassoing')) return [];
-      // Use getStateDescendant to get the lassoing state (as per tldraw docs)
-      const lassoing = editor.getStateDescendant('lasso-select.lassoing') as LassoingState | undefined;
-      return lassoing?.points?.get() ?? [];
-    },
-    [editor]
-  );
-
-  // Convert points to SVG path
-  const svgPath = useMemo(() => {
-    if (lassoPoints.length < 2) return '';
-
-    // Build SVG path from points
-    let path = `M ${lassoPoints[0].x} ${lassoPoints[0].y}`;
-    for (let i = 1; i < lassoPoints.length; i++) {
-      path += ` L ${lassoPoints[i].x} ${lassoPoints[i].y}`;
-    }
-    // Close the path
-    path += ' Z';
-    return path;
-  }, [lassoPoints]);
-
-  if (lassoPoints.length === 0) return null;
-
-  return (
-    <svg className="tl-overlays__item" aria-hidden="true">
-      <path
-        d={svgPath}
-        fill="none"
-        stroke="rgba(59, 130, 246, 1)"
-        strokeWidth="calc(2px / var(--tl-zoom))"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeDasharray="4 4"
-      />
-    </svg>
-  );
-};
-
-// Custom overlays including lasso
-const SkemaOverlays: React.FC = () => {
-  return (
-    <>
-      <TldrawOverlays />
-      <LassoOverlay />
-    </>
-  );
-};
-
-// Selection highlight overlay component
-// Selections are stored in document coordinates and rendered relative to page content
-const SelectionOverlay: React.FC<{ selections: DOMSelection[] }> = ({ selections }) => {
-  // Track scroll position to trigger re-renders
-  const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrollPos({ x: window.scrollX, y: window.scrollY });
-    };
-    // Initial position
-    handleScroll();
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  return (
-    <>
-      {selections.map((selection) => {
-        // boundingBox is stored in document coordinates
-        // Convert to viewport coordinates by subtracting current scroll
-        const viewportX = selection.boundingBox.x - scrollPos.x;
-        const viewportY = selection.boundingBox.y - scrollPos.y;
-
-        return (
-          <div
-            key={selection.id}
-            data-skema="selection"
-            style={{
-              position: 'fixed',
-              left: viewportX,
-              top: viewportY,
-              width: selection.boundingBox.width,
-              height: selection.boundingBox.height,
-              border: '2px solid #10b981',
-              backgroundColor: 'rgba(16, 185, 129, 0.1)',
-              pointerEvents: 'none',
-              zIndex: 999997,
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                top: -20,
-                left: 0,
-                backgroundColor: '#10b981',
-                color: 'white',
-                padding: '2px 6px',
-                fontSize: '11px',
-                borderRadius: '3px',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {selection.tagName}
-            </span>
-          </div>
-        );
-      })}
-    </>
-  );
-};
-
-// =============================================================================
-// Processing Loading Overlay - Shows animation when changes are being made
-// =============================================================================
-
-// Animated shape loader component - cycles through colorful shapes
-const ShapeLoader: React.FC = () => {
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width: 28,
-        height: 28,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {/* Orange Star */}
-      <svg
-        className="skema-shape skema-shape-1"
-        viewBox="0 0 24 24"
-        style={{
-          position: 'absolute',
-          width: 24,
-          height: 24,
-        }}
-      >
-        <polygon
-          points="12,2 15,9 22,9 16,14 18,22 12,17 6,22 8,14 2,9 9,9"
-          fill="#F97316"
-        />
-      </svg>
-      {/* Yellow Parallelogram */}
-      <svg
-        className="skema-shape skema-shape-2"
-        viewBox="0 0 24 24"
-        style={{
-          position: 'absolute',
-          width: 24,
-          height: 24,
-        }}
-      >
-        <polygon
-          points="6,4 22,4 18,20 2,20"
-          fill="#FACC15"
-        />
-      </svg>
-      {/* Red Triangle */}
-      <svg
-        className="skema-shape skema-shape-3"
-        viewBox="0 0 24 24"
-        style={{
-          position: 'absolute',
-          width: 24,
-          height: 24,
-        }}
-      >
-        <polygon
-          points="12,3 22,21 2,21"
-          fill="#EF4444"
-        />
-      </svg>
-      {/* Blue Circle */}
-      <svg
-        className="skema-shape skema-shape-4"
-        viewBox="0 0 24 24"
-        style={{
-          position: 'absolute',
-          width: 24,
-          height: 24,
-        }}
-      >
-        <circle cx="12" cy="12" r="10" fill="#3B82F6" />
-      </svg>
-      {/* Green Square */}
-      <svg
-        className="skema-shape skema-shape-5"
-        viewBox="0 0 24 24"
-        style={{
-          position: 'absolute',
-          width: 24,
-          height: 24,
-        }}
-      >
-        <rect x="3" y="3" width="18" height="18" fill="#22C55E" />
-      </svg>
-    </div>
-  );
-};
-
-const ProcessingOverlay: React.FC<{
-  boundingBox: BoundingBox;
-  scrollOffset: { x: number; y: number };
-}> = ({ boundingBox, scrollOffset }) => {
-  // Convert to viewport coordinates
-  const viewportX = boundingBox.x - scrollOffset.x;
-  const viewportY = boundingBox.y - scrollOffset.y;
-
-  return (
-    <>
-      <style>{`
-        @keyframes skema-processing-pulse {
-          0%, 100% {
-            opacity: 0.7;
-            transform: scale(1);
-          }
-          50% {
-            opacity: 0.95;
-            transform: scale(1.02);
-          }
-        }
-        @keyframes skema-processing-shimmer {
-          0% {
-            background-position: -200% 0;
-          }
-          100% {
-            background-position: 200% 0;
-          }
-        }
-        @keyframes skema-processing-border {
-          0%, 100% {
-            border-color: rgba(139, 92, 246, 0.85);
-          }
-          50% {
-            border-color: rgba(139, 92, 246, 1);
-          }
-        }
-        
-        /* Shape loader animations */
-        .skema-shape {
-          opacity: 0;
-          transform: scale(0.5) rotate(-180deg);
-          animation: skema-shape-cycle 2.5s ease-in-out infinite;
-        }
-        .skema-shape-1 { animation-delay: 0s; }
-        .skema-shape-2 { animation-delay: 0.5s; }
-        .skema-shape-3 { animation-delay: 1s; }
-        .skema-shape-4 { animation-delay: 1.5s; }
-        .skema-shape-5 { animation-delay: 2s; }
-        
-        @keyframes skema-shape-cycle {
-          0%, 100% {
-            opacity: 0;
-            transform: scale(0.5) rotate(-180deg);
-          }
-          10%, 30% {
-            opacity: 1;
-            transform: scale(1) rotate(0deg);
-          }
-          40% {
-            opacity: 0;
-            transform: scale(0.5) rotate(180deg);
-          }
-        }
-      `}</style>
-      <div
-        data-skema="processing-overlay"
-        style={{
-          position: 'fixed',
-          left: viewportX,
-          top: viewportY,
-          width: boundingBox.width,
-          height: boundingBox.height,
-          border: '3px solid rgba(139, 92, 246, 0.95)',
-          borderRadius: 4,
-          pointerEvents: 'none',
-          zIndex: 999998,
-          animation: 'skema-processing-pulse 1.5s ease-in-out infinite, skema-processing-border 1.5s ease-in-out infinite',
-          background: 'linear-gradient(90deg, rgba(139, 92, 246, 0.15) 0%, rgba(139, 92, 246, 0.35) 50%, rgba(139, 92, 246, 0.15) 100%)',
-          backgroundSize: '200% 100%',
-        }}
-      >
-        {/* Shimmer effect */}
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.25) 50%, transparent 100%)',
-            backgroundSize: '200% 100%',
-            animation: 'skema-processing-shimmer 2s linear infinite',
-            borderRadius: 2,
-          }}
-        />
-        {/* Loading indicator badge with animated shapes */}
-        <div
-          style={{
-            position: 'absolute',
-            top: -18,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '8px 14px',
-            backgroundColor: '#FFFFFF',
-            borderRadius: 20,
-            boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.08)',
-          }}
-        >
-          <ShapeLoader />
-        </div>
-      </div>
-    </>
-  );
-};
-
-// Annotations sidebar
-const AnnotationsSidebar: React.FC<{
-  annotations: Annotation[];
-  onClear: () => void;
-  onExport: () => void;
-}> = ({ annotations, onClear, onExport }) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <div
-      data-skema="sidebar"
-      style={{
-        position: 'fixed',
-        right: isOpen ? 0 : -280,
-        top: 60,
-        width: 280,
-        maxHeight: 'calc(100vh - 120px)',
-        backgroundColor: 'white',
-        borderRadius: '8px 0 0 8px',
-        boxShadow: '-2px 0 10px rgba(0,0,0,0.1)',
-        transition: 'right 0.2s ease-out',
-        zIndex: 999996,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Toggle button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          position: 'absolute',
-          left: -32,
-          top: 10,
-          width: 32,
-          height: 32,
-          backgroundColor: '#3b82f6',
-          border: 'none',
-          borderRadius: '8px 0 0 8px',
-          color: 'white',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        {isOpen ? '→' : '←'}
-      </button>
-
-      {/* Header */}
-      <div
-        style={{
-          padding: '12px 16px',
-          borderBottom: '1px solid #e5e7eb',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: '14px' }}>
-          Annotations ({annotations.length})
-        </span>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={onExport}
-            style={{
-              padding: '4px 8px',
-              fontSize: '12px',
-              backgroundColor: '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-          >
-            Export
-          </button>
-          <button
-            onClick={onClear}
-            style={{
-              padding: '4px 8px',
-              fontSize: '12px',
-              backgroundColor: '#ef4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-            }}
-          >
-            Clear
-          </button>
-        </div>
-      </div>
-
-      {/* Annotations list */}
-      <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' }}>
-        {annotations.length === 0 ? (
-          <div style={{ padding: '16px', color: '#6b7280', fontSize: '13px' }}>
-            No annotations yet. Use the DOM picker or drawing tools to annotate.
-          </div>
-        ) : (
-          annotations.map((annotation) => (
-            <div
-              key={annotation.id}
-              style={{
-                padding: '12px 16px',
-                borderBottom: '1px solid #f3f4f6',
-                fontSize: '13px',
-              }}
-            >
-              <div style={{ fontWeight: 500, marginBottom: '4px' }}>
-                {annotation.type === 'dom_selection' && `🎯 ${(annotation as DOMSelection).tagName}`}
-                {annotation.type === 'drawing' && `✏️ ${(annotation as import('../types').DrawingAnnotation).comment || 'Drawing'}`}
-                {annotation.type === 'gesture' && `👆 ${annotation.gesture}`}
-              </div>
-              {annotation.type === 'dom_selection' && (
-                <>
-                  {(annotation as DOMSelection).comment && (
-                    <div style={{ color: '#374151', fontSize: '12px', marginBottom: '4px' }}>
-                      {(annotation as DOMSelection).comment}
-                    </div>
-                  )}
-                  <div style={{ color: '#6b7280', fontSize: '11px' }}>
-                    {(annotation as DOMSelection).selector.slice(0, 50)}
-                  </div>
-                </>
-              )}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-};
+// Extracted Config
+import { skemaComponents, skemaOverrides, skemaHiddenUiStyles, skemaToastStyles } from '../lib/tldrawConfig';
 
 /**
  * Main Skema component - renders tldraw as a transparent overlay
@@ -875,6 +60,9 @@ export const Skema: React.FC<SkemaProps> = ({
   zIndex = 99999,
   isProcessing = false,
 }) => {
+  // =============================================================================
+  // State
+  // =============================================================================
   const [isActive, setIsActive] = useState(enabled);
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [domSelections, setDomSelections] = useState<DOMSelection[]>([]);
@@ -883,156 +71,45 @@ export const Skema: React.FC<SkemaProps> = ({
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [processingBoundingBox, setProcessingBoundingBox] = useState<BoundingBox | null>(null);
   const [scribbleToast, setScribbleToast] = useState<string | null>(null);
+
+  // =============================================================================
+  // Refs
+  // =============================================================================
   const editorRef = useRef<Editor | null>(null);
   const popupRef = useRef<AnnotationPopupHandle>(null);
   const lastDoubleClickRef = useRef<number>(0);
-  const justFinishedDrawingRef = useRef<boolean>(false);
   const cleanupRef = useRef<(() => void) | null>(null);
-  
-  // Scribble detection refs - for real-time tracking during drawing
-  const scribblePointsRef = useRef<GesturePoint[]>([]);
-  const isDrawingRef = useRef<boolean>(false);
-  const scribbleDetectedRef = useRef<boolean>(false);
-  
-  // Saved shapes for hide/restore when toggling Skema off/on
-  // Stores shape data when user presses Cmd+Shift+E to hide overlay
-  const savedShapesRef = useRef<Record<string, any> | null>(null);
-  const wasActiveRef = useRef<boolean>(isActive);
-
-  // Handle keyboard shortcut to toggle
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      if (isMod && e.shiftKey && e.key.toLowerCase() === 'e') {
-        e.preventDefault();
-        setIsActive((prev) => !prev);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   // =============================================================================
-  // Hide/Restore Drawings When Toggling Skema Off/On
+  // Custom Hooks
   // =============================================================================
-  // When user presses Cmd+Shift+E to hide Skema, save all drawings to memory
-  // and remove them from canvas. When Skema is shown again, restore them.
-  
-  useEffect(() => {
-    const editor = editorRef.current;
-    
-    // Detect transition from active to inactive (hiding Skema)
-    if (wasActiveRef.current && !isActive && editor) {
-      // Get all drawing shapes on the canvas
-      const allShapes = editor.getCurrentPageShapes();
-      const drawingShapes = allShapes.filter(shape => 
-        ['draw', 'line', 'arrow', 'geo', 'text', 'note', 'frame'].includes(shape.type)
-      );
-      
-      if (drawingShapes.length > 0) {
-        // Save the current store snapshot (only shapes we care about)
-        const shapeRecords: Record<string, any> = {};
-        for (const shape of drawingShapes) {
-          shapeRecords[shape.id] = shape;
-        }
-        savedShapesRef.current = shapeRecords;
-        
-        // Delete the shapes from canvas (they're now hidden)
-        const shapeIds = drawingShapes.map(s => s.id);
-        editor.deleteShapes(shapeIds);
-        
-        console.log(`[Skema] Hiding: saved ${drawingShapes.length} shape(s) to memory`);
-      }
-    }
-    
-    // Update the ref for next comparison
-    wasActiveRef.current = isActive;
-  }, [isActive]);
-  
-  // Restore shapes when Skema becomes active again (after editor is mounted)
-  useEffect(() => {
-    if (!isActive) return;
-    
-    const editor = editorRef.current;
-    if (!editor || !savedShapesRef.current) return;
-    
-    // Small delay to ensure editor is fully ready after mount
-    const timeoutId = setTimeout(() => {
-      const savedShapes = savedShapesRef.current;
-      if (!savedShapes || !editorRef.current) return;
-      
-      const editor = editorRef.current;
-      const shapesToRestore = Object.values(savedShapes);
-      
-      if (shapesToRestore.length > 0) {
-        // Restore shapes to the canvas
-        editor.createShapes(shapesToRestore);
-        console.log(`[Skema] Restoring: loaded ${shapesToRestore.length} shape(s) from memory`);
-        
-        // Clear saved shapes after restore
-        savedShapesRef.current = null;
-      }
-    }, 100);
-    
-    return () => clearTimeout(timeoutId);
-  }, [isActive]);
 
-  // Track scroll position to sync tldraw camera with page
-  const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
+  // Keyboard shortcut to toggle overlay
+  useKeyboardShortcuts({
+    onToggle: useCallback(() => setIsActive(prev => !prev), []),
+    shortcut: toggleShortcut,
+  });
 
-  // Sync scroll position with tldraw camera
-  useEffect(() => {
-    if (!isActive) return;
+  // Scroll sync between page and tldraw camera
+  const scrollOffset = useScrollSync(isActive, editorRef);
 
-    const syncScroll = () => {
-      const newOffset = { x: window.scrollX, y: window.scrollY };
-      setScrollOffset(newOffset);
+  // Intercept wheel events to scroll page instead of panning tldraw
+  useWheelIntercept(isActive);
 
-      // Update tldraw camera to match scroll position
-      if (editorRef.current) {
-        editorRef.current.setCamera({ x: -newOffset.x, y: -newOffset.y, z: 1 });
-      }
-    };
+  // Persist shapes when toggling overlay off/on
+  useShapePersistence(isActive, editorRef);
 
-    // Initial sync
-    syncScroll();
+  // Scribble gesture detection for delete
+  useScribbleDelete({
+    isActive,
+    editorRef,
+    setAnnotations,
+    setScribbleToast,
+  });
 
-    // Listen for scroll events
-    window.addEventListener('scroll', syncScroll, { passive: true });
-
-    return () => {
-      window.removeEventListener('scroll', syncScroll);
-    };
-  }, [isActive]);
-
-  // Intercept wheel events and scroll the page instead of panning tldraw
-  useEffect(() => {
-    if (!isActive) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      // Check if the event target is within tldraw's canvas area
-      const target = e.target as HTMLElement;
-      if (target.closest('.tl-container') || target.closest('[data-skema="container"]')) {
-        // Stop tldraw from handling it
-        e.stopPropagation();
-
-        // Manually scroll the page
-        window.scrollBy({
-          top: e.deltaY,
-          left: e.deltaX,
-          behavior: 'auto',
-        });
-      }
-    };
-
-    // Capture phase to intercept before tldraw
-    document.addEventListener('wheel', handleWheel, { capture: true, passive: false });
-
-    return () => {
-      document.removeEventListener('wheel', handleWheel, { capture: true });
-    };
-  }, [isActive]);
+  // =============================================================================
+  // Effects
+  // =============================================================================
 
   // Notify parent of annotation changes
   useEffect(() => {
@@ -1046,7 +123,20 @@ export const Skema: React.FC<SkemaProps> = ({
     }
   }, [isProcessing]);
 
-  // Helper to check if there are drawings in the current tldraw selection
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+      }
+    };
+  }, []);
+
+  // =============================================================================
+  // Helper Functions
+  // =============================================================================
+
+  // Get selected drawing shapes from tldraw
   const getSelectedDrawings = useCallback(() => {
     if (!editorRef.current) return [];
     const editor = editorRef.current;
@@ -1057,24 +147,56 @@ export const Skema: React.FC<SkemaProps> = ({
     );
   }, []);
 
-  // Handle DOM selection from picker - shows annotation popup
+  // Find DOM elements that intersect with a bounding box
+  const findDOMElementsInBounds = useCallback((bounds: BoundingBox): HTMLElement[] => {
+    const elements: HTMLElement[] = [];
+    const allElements = document.querySelectorAll('*');
+
+    allElements.forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      if (shouldIgnoreElement(el)) return;
+
+      const rect = el.getBoundingClientRect();
+      const elBounds: BoundingBox = {
+        x: rect.left,
+        y: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+
+      // Skip tiny elements
+      if (elBounds.width < 10 || elBounds.height < 10) return;
+
+      if (bboxIntersects(bounds, elBounds)) {
+        const isParent = elements.some((existing) => el.contains(existing));
+        if (!isParent) {
+          const filtered = elements.filter((existing) => !existing.contains(el) && !el.contains(existing));
+          filtered.push(el);
+          elements.length = 0;
+          elements.push(...filtered);
+        }
+      }
+    });
+
+    return elements;
+  }, []);
+
+  // =============================================================================
+  // DOM Selection Handlers
+  // =============================================================================
+
   const handleDOMSelect = useCallback((selection: DOMSelection) => {
-    // Check if there are also drawings selected
     const selectedDrawings = getSelectedDrawings();
     const hasDrawings = selectedDrawings.length > 0;
-
-    // Calculate popup position
     const rect = selection.boundingBox;
     const x = ((rect.x + rect.width / 2) / window.innerWidth) * 100;
     const clientY = rect.y - window.scrollY + rect.height / 2;
 
-    // Build element description
     let elementDesc = selection.tagName;
     if (hasDrawings) {
       elementDesc = `Drawing + ${selection.tagName}`;
     }
 
-    // Set pending annotation to show popup
     setPendingAnnotation({
       x,
       y: rect.y + rect.height / 2,
@@ -1090,15 +212,12 @@ export const Skema: React.FC<SkemaProps> = ({
     });
   }, [getSelectedDrawings]);
 
-  // Handle multi-element selection (from lasso/brush) - shows popup for all selected
   const handleMultiDOMSelect = useCallback((selections: DOMSelection[]) => {
     if (selections.length === 0) return;
 
-    // Check if there are also drawings selected
     const selectedDrawings = getSelectedDrawings();
     const hasDrawings = selectedDrawings.length > 0;
 
-    // Calculate combined bounding box
     const minX = Math.min(...selections.map(s => s.boundingBox.x));
     const minY = Math.min(...selections.map(s => s.boundingBox.y));
     const maxX = Math.max(...selections.map(s => s.boundingBox.x + s.boundingBox.width));
@@ -1116,12 +235,10 @@ export const Skema: React.FC<SkemaProps> = ({
     const x = (centerX / window.innerWidth) * 100;
     const clientY = centerY - window.scrollY;
 
-    // Build element description
     const elementNames = selections.slice(0, 3).map(s => s.tagName).join(', ');
     const suffix = selections.length > 3 ? ` +${selections.length - 3} more` : '';
     let element = `${selections.length} elements: ${elementNames}${suffix}`;
 
-    // Add drawing info if present
     if (hasDrawings) {
       const drawingCount = selectedDrawings.length;
       element = `Drawing (${drawingCount}) + ${element}`;
@@ -1141,7 +258,83 @@ export const Skema: React.FC<SkemaProps> = ({
     });
   }, [getSelectedDrawings]);
 
-  // Submit annotation from popup
+  // =============================================================================
+  // Drawing Annotation Handler
+  // =============================================================================
+
+  const handleDrawingAnnotation = useCallback((selectedIds: TLShapeId[], skipDomElements = false) => {
+    if (!editorRef.current || selectedIds.length === 0) return;
+    if (pendingAnnotation) return;
+
+    const editor = editorRef.current;
+    const selectedShapes = selectedIds.map((id) => editor.getShape(id)).filter(Boolean);
+    if (selectedShapes.length === 0) return;
+
+    // Calculate bounds from shapes
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const shape of selectedShapes) {
+      if (!shape) continue;
+      const bounds = editor.getShapePageBounds(shape.id);
+      if (bounds) {
+        minX = Math.min(minX, bounds.x);
+        minY = Math.min(minY, bounds.y);
+        maxX = Math.max(maxX, bounds.x + bounds.width);
+        maxY = Math.max(maxY, bounds.y + bounds.height);
+      }
+    }
+    if (minX === Infinity) return;
+
+    const selectionBounds = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+
+    const drawingShapes = selectedShapes.filter(shape =>
+      shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
+    );
+    if (drawingShapes.length === 0) return;
+
+    // Find DOM elements in bounds (unless skipped)
+    let domElements: HTMLElement[] = [];
+    if (!skipDomElements) {
+      const viewportBounds: BoundingBox = {
+        x: selectionBounds.x - window.scrollX,
+        y: selectionBounds.y - window.scrollY,
+        width: selectionBounds.width,
+        height: selectionBounds.height,
+      };
+      domElements = findDOMElementsInBounds(viewportBounds);
+    }
+
+    const centerX = selectionBounds.x + selectionBounds.width / 2;
+    const centerY = selectionBounds.y + selectionBounds.height / 2;
+    const x = ((centerX - window.scrollX) / window.innerWidth) * 100;
+    const clientY = centerY - window.scrollY;
+
+    let elementDesc = `Drawing (${drawingShapes.length} shape${drawingShapes.length > 1 ? 's' : ''})`;
+    if (domElements.length > 0) {
+      const domNames = domElements.slice(0, 2).map(el => el.tagName.toLowerCase()).join(', ');
+      const domSuffix = domElements.length > 2 ? ` +${domElements.length - 2} more` : '';
+      elementDesc += ` + ${domNames}${domSuffix}`;
+    }
+
+    const newDomSelections = domElements.map(el => createDOMSelection(el));
+
+    setPendingAnnotation({
+      x,
+      y: centerY,
+      clientY,
+      element: elementDesc,
+      elementPath: 'drawing',
+      boundingBox: selectionBounds,
+      isMultiSelect: drawingShapes.length > 1 || domElements.length > 0,
+      annotationType: 'drawing',
+      shapeIds: selectedIds as string[],
+      selections: newDomSelections.length > 0 ? newDomSelections : undefined,
+    });
+  }, [pendingAnnotation, findDOMElementsInBounds]);
+
+  // =============================================================================
+  // Annotation Submit/Cancel/Delete Handlers
+  // =============================================================================
+
   const handleAnnotationSubmit = useCallback(async (comment: string) => {
     if (!pendingAnnotation) return;
 
@@ -1149,17 +342,15 @@ export const Skema: React.FC<SkemaProps> = ({
       const selections = pendingAnnotation.selections;
 
       if (selections.length === 1) {
-        // Single element - create simple annotation
         const selection = { ...selections[0], comment };
         setDomSelections((prev) => [...prev, selection]);
         setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...selection }]);
       } else {
-        // Multiple elements - create a single grouped annotation
         const groupedSelection: DOMSelection = {
           id: `group-${Date.now()}`,
           selector: selections.map(s => s.selector).join(', '),
-          tagName: pendingAnnotation.element, // Already formatted as "3 elements: div, span, p"
-          elementPath: selections[0].elementPath, // Use first element's path as reference
+          tagName: pendingAnnotation.element,
+          elementPath: selections[0].elementPath,
           text: selections.map(s => s.text).filter(Boolean).join(' | ').slice(0, 200),
           boundingBox: pendingAnnotation.boundingBox!,
           timestamp: Date.now(),
@@ -1176,15 +367,11 @@ export const Skema: React.FC<SkemaProps> = ({
             attributes: s.attributes,
           })),
         };
-
         setDomSelections((prev) => [...prev, groupedSelection]);
         setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...groupedSelection }]);
       }
     } else if (pendingAnnotation.annotationType === 'drawing' && pendingAnnotation.shapeIds) {
-      // Handle drawing annotation - extract SVG and nearby elements
       const bbox = pendingAnnotation.boundingBox!;
-
-      // Get nearby DOM elements for context
       const nearbyElements = pendingAnnotation.selections?.map(s => ({
         selector: s.selector,
         tagName: s.tagName,
@@ -1202,84 +389,10 @@ export const Skema: React.FC<SkemaProps> = ({
         nearbyElements,
       };
       setAnnotations((prev) => [...prev, drawingAnnotation]);
-
-      // FORENSIC LOGGING - Drawing annotation
-      const drawingLog = `
-### ${annotations.length + 1}. Drawing (${pendingAnnotation.shapeIds?.length || 0} shapes)
-**Position:** x:${Math.round(bbox.x)}, y:${Math.round(bbox.y)} (${Math.round(bbox.width)}×${Math.round(bbox.height)}px)
-**Annotation at:** ${((bbox.x + bbox.width / 2) / window.innerWidth * 100).toFixed(1)}% from left, ${Math.round(bbox.y + bbox.height / 2)}px from top
-**Shape IDs:** ${pendingAnnotation.shapeIds?.join(', ') || 'none'}
-**Nearby Elements:** ${nearbyElements.map(e => e.tagName).join(', ') || 'none'}
-**Feedback:** ${comment}
-`;
-      console.log(drawingLog);
     }
 
-    // Log DOM selection annotations
-    if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
-      const selections = pendingAnnotation.selections;
-      const annotationIndex = annotations.length + 1;
-
-      // Build element descriptions
-      const elementDescs = selections.map(s => {
-        const textPreview = s.text?.slice(0, 50) || '';
-        return `${s.tagName.toLowerCase()}${textPreview ? `: "${textPreview}..."` : ''}`;
-      }).join(', ');
-
-      // Get first element for detailed forensic data
-      const firstSelection = selections[0];
-      const firstElement = document.querySelector(firstSelection.selector) as HTMLElement | null;
-
-      let computedStylesStr = 'N/A';
-      let nearbyElements = 'N/A';
-
-      if (firstElement) {
-        // Get computed styles
-        const styles = window.getComputedStyle(firstElement);
-        computedStylesStr = [
-          `color: ${styles.color}`,
-          `border-color: ${styles.borderColor}`,
-          `font-size: ${styles.fontSize}`,
-          `font-weight: ${styles.fontWeight}`,
-          `font-family: ${styles.fontFamily}`,
-          `line-height: ${styles.lineHeight}`,
-          `letter-spacing: ${styles.letterSpacing}`,
-          `text-align: ${styles.textAlign}`,
-          `width: ${styles.width}`,
-          `height: ${styles.height}`,
-          `border: ${styles.border}`,
-          `display: ${styles.display}`,
-          `flex-direction: ${styles.flexDirection}`,
-          `opacity: ${styles.opacity}`,
-        ].join('; ');
-
-        // Get nearby elements (siblings)
-        const parent = firstElement.parentElement;
-        if (parent) {
-          const siblings = Array.from(parent.children)
-            .filter(el => el !== firstElement)
-            .slice(0, 3)
-            .map(el => el.tagName.toLowerCase());
-          nearbyElements = siblings.length > 0 ? siblings.join(', ') : 'none';
-        }
-      }
-
-      const bbox = pendingAnnotation.boundingBox!;
-      const forensicLog = `
-### ${annotationIndex}. ${selections.length > 1 ? `${selections.length} elements: ` : ''}${elementDescs}
-${selections.length > 1 ? '*Forensic data shown for first element of selection*\n' : ''}**Full DOM Path:** ${firstSelection.elementPath}
-**Position:** x:${Math.round(bbox.x)}, y:${Math.round(bbox.y)} (${Math.round(bbox.width)}×${Math.round(bbox.height)}px)
-**Annotation at:** ${((bbox.x + bbox.width / 2) / window.innerWidth * 100).toFixed(1)}% from left, ${Math.round(bbox.y + bbox.height / 2)}px from top
-**Computed Styles:** ${computedStylesStr}
-**Nearby Elements:** ${nearbyElements}
-**Feedback:** ${comment}
-`;
-      console.log(forensicLog);
-    }
-
-    // Call onAnnotationSubmit callback for real-time integrations (e.g., Gemini)
+    // Call onAnnotationSubmit callback
     if (onAnnotationSubmit) {
-      // Construct the annotation that was just created
       let submittedAnnotation: Annotation;
 
       if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
@@ -1311,51 +424,34 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           };
         }
       } else {
-        // Drawing annotation - extract SVG, PNG image, and text from shapes
+        // Drawing annotation - extract SVG, PNG image
         const editor = editorRef.current;
         let drawingSvg: string | undefined;
         let drawingImage: string | undefined;
         let extractedText: string | undefined;
         const gridConfig = { color: '#0066FF', size: 100, labels: true };
 
-        console.log('[Skema] Drawing annotation - shapeIds:', pendingAnnotation.shapeIds);
-
         if (editor && pendingAnnotation.shapeIds && pendingAnnotation.shapeIds.length > 0) {
           const shapeIds = pendingAnnotation.shapeIds as TLShapeId[];
-          console.log('[Skema] Exporting', shapeIds.length, 'shapes for image...');
 
           try {
-            // Get SVG export of the drawing shapes
-            const svgResult = await editor.getSvgString(shapeIds, {
-              padding: 20,
-              background: false,
-            });
+            const svgResult = await editor.getSvgString(shapeIds, { padding: 20, background: false });
             if (svgResult?.svg) {
-              // Add grid overlay to SVG for positioning reference
               drawingSvg = addGridToSvg(svgResult.svg, gridConfig);
-              console.log('[Skema] SVG export successful');
             }
           } catch (e) {
             console.warn('[Skema] Failed to export drawing SVG:', e);
           }
 
           try {
-            // Get PNG image export for vision AI
-            const imageResult = await editor.toImage(shapeIds, {
-              format: 'png',
-              padding: 20,
-              background: true,
-            });
-            console.log('[Skema] toImage result:', imageResult ? 'got result' : 'null', imageResult?.blob ? 'has blob' : 'no blob');
+            const imageResult = await editor.toImage(shapeIds, { format: 'png', padding: 20, background: true });
             if (imageResult?.blob) {
               drawingImage = await blobToBase64(imageResult.blob);
-              console.log('[Skema] Image export successful, base64 length:', drawingImage?.length);
             }
           } catch (e) {
             console.warn('[Skema] Failed to export drawing image:', e);
           }
 
-          // Extract text from text/note shapes
           try {
             const shapes = shapeIds.map(id => editor.getShape(id)).filter(Boolean);
             extractedText = extractTextFromShapes(shapes);
@@ -1364,15 +460,10 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           }
         }
 
-        // Get nearby DOM elements with computed styles for context
         const nearbyElements = pendingAnnotation.boundingBox
           ? findNearbyElementsWithStyles(pendingAnnotation.boundingBox, 5)
           : [];
-
-        // Get project-level style context (CSS framework, design tokens, etc.)
         const projectStyles = extractProjectStyleContext();
-
-        // Get viewport info for relative sizing context
         const viewport = getViewportInfo();
 
         submittedAnnotation = {
@@ -1393,7 +484,6 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         };
       }
 
-      // Store the bounding box for loading animation
       if (pendingAnnotation.boundingBox) {
         setProcessingBoundingBox(pendingAnnotation.boundingBox);
       }
@@ -1408,43 +498,32 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     }, 150);
   }, [pendingAnnotation, onAnnotationSubmit]);
 
-  // Cancel annotation popup and any in-progress processing
   const handleAnnotationCancel = useCallback(() => {
     setPendingExiting(true);
-    
-    // If processing is active, cancel it
     if (isProcessing) {
       onProcessingCancel?.();
     }
-    
-    // Always clear the processing bounding box on cancel
     setProcessingBoundingBox(null);
-    
     setTimeout(() => {
       setPendingAnnotation(null);
       setPendingExiting(false);
     }, 150);
   }, [isProcessing, onProcessingCancel]);
 
-  // Delete an annotation (when clicking on marker)
   const handleDeleteAnnotation = useCallback((annotation: Annotation) => {
     setAnnotations((prev) => prev.filter((a) => a.id !== annotation.id));
     if (annotation.type === 'dom_selection') {
       setDomSelections((prev) => prev.filter((s) => s.id !== annotation.id));
     }
     setHoveredMarkerId(null);
-    
-    // If processing is active, cancel it (user is deleting while processing)
+
     if (isProcessing) {
       onProcessingCancel?.();
       setProcessingBoundingBox(null);
     }
-    
-    // Call the delete callback (for reverting Gemini changes)
     onAnnotationDelete?.(annotation.id);
   }, [onAnnotationDelete, isProcessing, onProcessingCancel]);
 
-  // Clear all annotations
   const handleClear = useCallback(() => {
     setAnnotations([]);
     setDomSelections([]);
@@ -1454,7 +533,6 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     }
   }, []);
 
-  // Export annotations
   const handleExport = useCallback(() => {
     const exportData = {
       version: '1.0.0',
@@ -1463,156 +541,24 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       pathname: window.location.pathname,
       annotations,
     };
-
-    // Copy to clipboard
     navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
-
-    // Also log to console for development
     console.log('[Skema] Exported annotations:', exportData);
-
     alert('Annotations copied to clipboard!');
   }, [annotations]);
 
-  // Find DOM elements that intersect with a bounding box
-  const findDOMElementsInBounds = useCallback((bounds: BoundingBox): HTMLElement[] => {
-    const elements: HTMLElement[] = [];
-    const allElements = document.querySelectorAll('*');
+  // =============================================================================
+  // Brush/Lasso Selection Handlers
+  // =============================================================================
 
-    allElements.forEach((el) => {
-      if (!(el instanceof HTMLElement)) return;
-      if (shouldIgnoreElement(el)) return;
-
-      const rect = el.getBoundingClientRect();
-      const elBounds: BoundingBox = {
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height,
-      };
-
-      // Skip tiny elements
-      if (elBounds.width < 10 || elBounds.height < 10) return;
-
-      if (bboxIntersects(bounds, elBounds)) {
-        // Check if this element is not a parent of already added elements
-        const isParent = elements.some((existing) => el.contains(existing));
-        if (!isParent) {
-          // Remove any children of this element that were already added
-          const filtered = elements.filter((existing) => !existing.contains(el) && !el.contains(existing));
-          filtered.push(el);
-          elements.length = 0;
-          elements.push(...filtered);
-        }
-      }
-    });
-
-    return elements;
-  }, []);
-
-  // Handle drawing annotation (triggered when drawings are selected)
-  // skipDomElements: when true, only annotate the drawing without including DOM elements behind it
-  const handleDrawingAnnotation = useCallback((selectedIds: TLShapeId[], skipDomElements = false) => {
-    if (!editorRef.current || selectedIds.length === 0) return;
-    // Don't trigger if there's already a pending annotation
-    if (pendingAnnotation) return;
-
-    const editor = editorRef.current;
-    const selectedShapes = selectedIds.map((id) => editor.getShape(id)).filter(Boolean);
-
-    if (selectedShapes.length === 0) return;
-
-    // Calculate bounds from shapes directly (more reliable than selection bounds)
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-    for (const shape of selectedShapes) {
-      if (!shape) continue;
-      const bounds = editor.getShapePageBounds(shape.id);
-      if (bounds) {
-        minX = Math.min(minX, bounds.x);
-        minY = Math.min(minY, bounds.y);
-        maxX = Math.max(maxX, bounds.x + bounds.width);
-        maxY = Math.max(maxY, bounds.y + bounds.height);
-      }
-    }
-
-    if (minX === Infinity) return;
-
-    const selectionBounds = {
-      x: minX,
-      y: minY,
-      width: maxX - minX,
-      height: maxY - minY,
-    };
-
-    // Check if these are drawing shapes
-    const drawingShapes = selectedShapes.filter(shape =>
-      shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)
-    );
-
-    if (drawingShapes.length === 0) return;
-
-    // Check for DOM elements in the selection bounds (unless skipped)
-    let domElements: HTMLElement[] = [];
-    if (!skipDomElements) {
-      const viewportBounds: BoundingBox = {
-        x: selectionBounds.x - window.scrollX,
-        y: selectionBounds.y - window.scrollY,
-        width: selectionBounds.width,
-        height: selectionBounds.height,
-      };
-      domElements = findDOMElementsInBounds(viewportBounds);
-    }
-
-    // Show annotation popup for drawings (and any DOM elements in bounds)
-    const centerX = selectionBounds.x + selectionBounds.width / 2;
-    const centerY = selectionBounds.y + selectionBounds.height / 2;
-    const x = ((centerX - window.scrollX) / window.innerWidth) * 100;
-    const clientY = centerY - window.scrollY;
-
-    // Build element description
-    let elementDesc = `Drawing (${drawingShapes.length} shape${drawingShapes.length > 1 ? 's' : ''})`;
-    if (domElements.length > 0) {
-      const domNames = domElements.slice(0, 2).map(el => el.tagName.toLowerCase()).join(', ');
-      const domSuffix = domElements.length > 2 ? ` +${domElements.length - 2} more` : '';
-      elementDesc += ` + ${domNames}${domSuffix}`;
-    }
-
-    // Create DOM selections if there are DOM elements
-    const newDomSelections = domElements.map(el => createDOMSelection(el));
-
-    setPendingAnnotation({
-      x,
-      y: centerY,
-      clientY,
-      element: elementDesc,
-      elementPath: 'drawing',
-      boundingBox: {
-        x: selectionBounds.x,
-        y: selectionBounds.y,
-        width: selectionBounds.width,
-        height: selectionBounds.height,
-      },
-      isMultiSelect: drawingShapes.length > 1 || domElements.length > 0,
-      annotationType: 'drawing',
-      shapeIds: selectedIds as string[],
-      selections: newDomSelections.length > 0 ? newDomSelections : undefined,
-    });
-  }, [pendingAnnotation, findDOMElementsInBounds]);
-
-  // Handle brush/drag selection to select DOM elements
   const handleBrushSelection = useCallback((brushBounds: BoundingBox) => {
-    // If tldraw already selected shapes (drawings), show drawing annotation popup instead
-    // This prevents selecting the DOM element behind a drawing when you only want the drawing
     if (editorRef.current) {
       const selectedShapeIds = editorRef.current.getSelectedShapeIds();
       if (selectedShapeIds.length > 0) {
-        // Skip DOM elements - user selected the drawing, not what's behind it
         handleDrawingAnnotation(selectedShapeIds, true);
         return;
       }
     }
 
-    // Convert brush bounds (in document coordinates due to camera sync) to viewport coordinates
     const viewportBounds: BoundingBox = {
       x: brushBounds.x - window.scrollX,
       y: brushBounds.y - window.scrollY,
@@ -1620,10 +566,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       height: brushBounds.height,
     };
 
-    // Find DOM elements in bounds
     const foundElements = findDOMElementsInBounds(viewportBounds);
-
-    // Filter out already selected elements
     const newElements = foundElements.filter((el) => {
       const rect = el.getBoundingClientRect();
       return !domSelections.some(
@@ -1634,9 +577,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
 
     if (newElements.length === 0) return;
 
-    // Create selections and show popup
     const selections = newElements.map(el => createDOMSelection(el));
-
     if (selections.length === 1) {
       handleDOMSelect(selections[0]);
     } else {
@@ -1644,51 +585,22 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
     }
   }, [findDOMElementsInBounds, domSelections, handleDOMSelect, handleMultiDOMSelect, handleDrawingAnnotation]);
 
-  // Check if a point is inside a polygon (ray casting algorithm)
-  const isPointInPolygon = useCallback((point: { x: number; y: number }, polygon: { x: number; y: number }[]): boolean => {
-    let inside = false;
-    const n = polygon.length;
-
-    for (let i = 0, j = n - 1; i < n; j = i++) {
-      const xi = polygon[i].x;
-      const yi = polygon[i].y;
-      const xj = polygon[j].x;
-      const yj = polygon[j].y;
-
-      const intersect =
-        yi > point.y !== yj > point.y &&
-        point.x < ((xj - xi) * (point.y - yi)) / (yj - yi) + xi;
-
-      if (intersect) {
-        inside = !inside;
-      }
-    }
-
-    return inside;
-  }, []);
-
-  // Handle lasso selection to select DOM elements that touch the lasso area
   const handleLassoSelection = useCallback((lassoPoints: { x: number; y: number }[]) => {
     if (lassoPoints.length < 3) return;
 
-    // If tldraw already selected shapes (drawings), show drawing annotation popup instead
-    // This prevents selecting the DOM element behind a drawing when you only want the drawing
     if (editorRef.current) {
       const selectedShapeIds = editorRef.current.getSelectedShapeIds();
       if (selectedShapeIds.length > 0) {
-        // Skip DOM elements - user selected the drawing, not what's behind it
         handleDrawingAnnotation(selectedShapeIds, true);
         return;
       }
     }
 
-    // Convert lasso points from page coordinates to viewport coordinates
     const viewportPoints = lassoPoints.map(p => ({
       x: p.x - window.scrollX,
       y: p.y - window.scrollY,
     }));
 
-    // Get lasso bounding box for quick intersection check
     let lassoMinX = Infinity, lassoMinY = Infinity;
     let lassoMaxX = -Infinity, lassoMaxY = -Infinity;
     for (const p of viewportPoints) {
@@ -1706,11 +618,8 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       if (shouldIgnoreElement(el)) return;
 
       const rect = el.getBoundingClientRect();
-
-      // Skip tiny elements
       if (rect.width < 10 || rect.height < 10) return;
 
-      // Check if element bounding box overlaps with lasso bounding box (any touch = selected)
       const boundsOverlap = !(
         rect.left > lassoMaxX ||
         rect.right < lassoMinX ||
@@ -1719,10 +628,8 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       );
 
       if (boundsOverlap) {
-        // Check if this element is not a parent of already added elements
         const isParent = foundElements.some((existing) => el.contains(existing));
         if (!isParent) {
-          // Remove any children of this element that were already added
           const filtered = foundElements.filter((existing) => !existing.contains(el) && !el.contains(existing));
           filtered.push(el);
           foundElements.length = 0;
@@ -1731,7 +638,6 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       }
     });
 
-    // Filter out already selected elements
     const newElements = foundElements.filter((el) => {
       const rect = el.getBoundingClientRect();
       return !domSelections.some(
@@ -1742,25 +648,25 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
 
     if (newElements.length === 0) return;
 
-    // Create selections and show popup
     const selections = newElements.map(el => createDOMSelection(el));
-
     if (selections.length === 1) {
       handleDOMSelect(selections[0]);
     } else {
       handleMultiDOMSelect(selections);
     }
-  }, [isPointInPolygon, domSelections, handleDOMSelect, handleMultiDOMSelect, handleDrawingAnnotation]);
+  }, [domSelections, handleDOMSelect, handleMultiDOMSelect, handleDrawingAnnotation]);
 
-  // Editor mount handler
+  // =============================================================================
+  // Editor Mount Handler
+  // =============================================================================
+
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
     // Set default arrow style to arc (curved)
     editor.setStyleForNextShapes(ArrowShapeKindStyle, 'arc');
 
-    // Override double click behavior to disable text creation and select DOM elements
-    // See: https://tldraw.dev/examples/custom-double-click-behavior
+    // Override double click behavior
     try {
       type IdleStateNode = StateNode & {
         handleDoubleClickOnCanvas(info: TLClickEventInfo): void;
@@ -1768,27 +674,16 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       };
       const selectIdleState = editor.getStateDescendant<IdleStateNode>('select.idle');
       if (selectIdleState) {
-        // Handle double-click on canvas (for DOM elements)
         selectIdleState.handleDoubleClickOnCanvas = (_info) => {
-          // Record double click time to prevent immediate clearing by pointerdown handler
           lastDoubleClickRef.current = Date.now();
-
-          // Find DOM element at the clicked position
-          // Use currentScreenPoint from inputs - this is the actual screen position,
-          // which is more reliable than pageToViewport when camera is synced to scroll
           const point = editor.inputs.currentScreenPoint;
           const elements = document.elementsFromPoint(point.x, point.y);
 
-          // Find the first valid DOM element (ignoring overlay/UI)
           const target = elements.find(el =>
             el instanceof HTMLElement && !shouldIgnoreElement(el as HTMLElement)
           ) as HTMLElement | undefined;
 
           if (target) {
-            // NOTE: We no longer clear existing annotations on double-click.
-            // Annotations persist until explicitly deleted by the user.
-
-            // Create selection and show popup
             const selection = createDOMSelection(target);
             const rect = selection.boundingBox;
             const x = ((rect.x + rect.width / 2) / window.innerWidth) * 100;
@@ -1809,62 +704,42 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
           }
         };
 
-        // Handle double-click on shape (for drawings)
         selectIdleState.handleDoubleClickOnShape = (_info, shape) => {
-          // Record double click time
           lastDoubleClickRef.current = Date.now();
-
-          // Check if this is a drawing shape type
           if (shape && ['draw', 'line', 'arrow', 'geo', 'text', 'note'].includes(shape.type)) {
-            // Get all selected shapes (in case multiple are selected)
             const selectedIds = editor.getSelectedShapeIds();
-            // If the double-clicked shape isn't selected, just use that one
             const shapeIds = selectedIds.length > 0 ? selectedIds : [shape.id];
-            // Skip DOM elements - user explicitly double-clicked on the drawing
             handleDrawingAnnotation(shapeIds, true);
           }
         };
-
       }
     } catch (e) {
       console.warn('Failed to override double click behavior', e);
     }
 
-    // Set initial camera to match current scroll position
+    // Set initial camera to match scroll position
     editor.setCamera({ x: -window.scrollX, y: -window.scrollY, z: 1 });
 
-    // Prevent zoom changes (only allow position changes for scroll sync)
+    // Prevent zoom changes
     editor.sideEffects.registerAfterChangeHandler('camera', () => {
       const camera = editor.getCamera();
-      // Only reset if zoom changed, allow position changes for scroll sync
       if (camera.z !== 1) {
         editor.setCamera({ x: camera.x, y: camera.y, z: 1 });
       }
     });
 
-
-
-    // Get the lasso select tool instance and set callbacks
-    const lassoSelectTool = editor.root.children?.['lasso-select'] as LassoSelectTool | undefined;
-    if (lassoSelectTool) {
-      // NOTE: We no longer clear annotations on single click.
-      // Annotations persist until explicitly deleted by the user.
-
-      // Set lasso complete callback (for selecting DOM elements)
-      if ('setOnLassoComplete' in lassoSelectTool) {
-        lassoSelectTool.setOnLassoComplete((points) => {
-          handleLassoSelection(points);
-        });
-      }
+    // Set up lasso tool callbacks
+    const lassoSelectTool = editor.root.children?.['lasso-select'] as any;
+    if (lassoSelectTool && 'setOnLassoComplete' in lassoSelectTool) {
+      lassoSelectTool.setOnLassoComplete((points: { x: number; y: number }[]) => {
+        handleLassoSelection(points);
+      });
     }
 
-    // Track brush selection for drag-selecting DOM elements
+    // Track brush selection
     let lastBrush: { x: number; y: number; w: number; h: number } | null = null;
-
     editor.sideEffects.registerAfterChangeHandler('instance', (prev, next) => {
-      // Check if brush selection just ended
       if (prev.brush && !next.brush && lastBrush) {
-        // Brush selection completed - find DOM elements in the brush area
         const brushBounds: BoundingBox = {
           x: lastBrush.x,
           y: lastBrush.y,
@@ -1874,173 +749,24 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         handleBrushSelection(brushBounds);
         lastBrush = null;
       } else if (next.brush) {
-        // Store the current brush bounds
         lastBrush = next.brush;
       }
-      return;
     });
-
-    // Note: Auto-select after drawing is disabled
-    // Users must manually select their drawings to annotate them
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
 
   // =============================================================================
-  // Real-time Scribble-to-Delete Gesture Detection
+  // Click Handler (for canceling pending annotation)
   // =============================================================================
-  // Track pointer events while draw tool is active to detect scribble gestures
-  // in real-time (before pen release) and delete shapes underneath.
-  
-  useEffect(() => {
-    if (!isActive) return;
-    
-    const handleScribbleDelete = (overlappingIds: TLShapeId[]) => {
-      const editor = editorRef.current;
-      if (!editor || overlappingIds.length === 0) return;
-      
-      // Cancel the current drawing operation
-      editor.cancel();
-      
-      // Delete overlapping shapes
-      editor.deleteShapes(overlappingIds);
-      
-      // Remove any annotations associated with deleted shapes
-      setAnnotations((prev) => prev.filter((annotation) => {
-        if (annotation.type === 'drawing') {
-          const drawingShapes = annotation.shapes as TLShapeId[];
-          return !drawingShapes.some((shapeId) => 
-            overlappingIds.includes(shapeId)
-          );
-        }
-        return true;
-      }));
-      
-      // Show toast notification
-      const message = overlappingIds.length === 1
-        ? 'Deleted 1 shape'
-        : `Deleted ${overlappingIds.length} shapes`;
-      setScribbleToast(message);
-      setTimeout(() => setScribbleToast(null), 2000);
-      
-      console.log(`[Skema] Scribble-delete: removed ${overlappingIds.length} shape(s)`);
-    };
-    
-    const handlePointerDown = (e: PointerEvent) => {
-      const editor = editorRef.current;
-      if (!editor) return;
-      
-      // Only track if draw tool is active
-      const currentTool = editor.getCurrentToolId();
-      if (currentTool !== 'draw') return;
-      
-      // Start tracking
-      isDrawingRef.current = true;
-      scribbleDetectedRef.current = false;
-      scribblePointsRef.current = [{ 
-        x: e.clientX + window.scrollX, 
-        y: e.clientY + window.scrollY 
-      }];
-    };
-    
-    const handlePointerMove = (e: PointerEvent) => {
-      const editor = editorRef.current;
-      if (!editor || !isDrawingRef.current || scribbleDetectedRef.current) return;
-      
-      // Only track if draw tool is still active and pointer is down
-      const currentTool = editor.getCurrentToolId();
-      if (currentTool !== 'draw') {
-        isDrawingRef.current = false;
-        return;
-      }
-      
-      // Add point (in page coordinates)
-      const newPoint = { 
-        x: e.clientX + window.scrollX, 
-        y: e.clientY + window.scrollY 
-      };
-      
-      const points = scribblePointsRef.current;
-      const lastPoint = points[points.length - 1];
-      
-      // Only add if moved enough (avoid duplicate points)
-      if (lastPoint) {
-        const dx = newPoint.x - lastPoint.x;
-        const dy = newPoint.y - lastPoint.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 3) return;
-      }
-      
-      points.push(newPoint);
-      scribblePointsRef.current = points;
-      
-      // Check for scribble gesture periodically (every 5 points after initial batch)
-      if (points.length >= 20 && points.length % 5 === 0) {
-        const gestureResult = isRealtimeScribble(points);
-        
-        if (gestureResult.isScribble) {
-          // Get bounds of the scribble path
-          const bounds = getPointsBounds(points);
-          
-          if (bounds) {
-            // Find shapes underneath the scribble
-            const overlappingIds = findOverlappingShapesFromBounds(editor, bounds, []);
-            
-            if (overlappingIds.length > 0) {
-              // Mark as detected to prevent re-triggering
-              scribbleDetectedRef.current = true;
-              isDrawingRef.current = false;
-              
-              // Trigger deletion
-              handleScribbleDelete(overlappingIds);
-            }
-          }
-        }
-      }
-    };
-    
-    const handlePointerUp = () => {
-      // Reset tracking state
-      isDrawingRef.current = false;
-      scribblePointsRef.current = [];
-      scribbleDetectedRef.current = false;
-    };
-    
-    // Add listeners with capture to track before tldraw
-    document.addEventListener('pointerdown', handlePointerDown, { capture: true });
-    document.addEventListener('pointermove', handlePointerMove, { capture: true });
-    document.addEventListener('pointerup', handlePointerUp, { capture: true });
-    document.addEventListener('pointercancel', handlePointerUp, { capture: true });
-    
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
-      document.removeEventListener('pointermove', handlePointerMove, { capture: true });
-      document.removeEventListener('pointerup', handlePointerUp, { capture: true });
-      document.removeEventListener('pointercancel', handlePointerUp, { capture: true });
-    };
-  }, [isActive]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (cleanupRef.current) {
-        cleanupRef.current();
-      }
-    };
-  }, []);
-
-  // Handle single click to clear DOM selections or shake popup
   useEffect(() => {
     if (!isActive) return;
 
     const handlePointerDown = (e: PointerEvent) => {
-      // Only handle left clicks
       if (e.button !== 0) return;
-
       const target = e.target as HTMLElement;
 
-      // If clicking on the popup, don't do anything
       if (target.closest('[data-skema="annotation-popup"]')) return;
 
-      // If there's a pending annotation and clicking elsewhere, cancel it
       if (pendingAnnotation) {
         e.preventDefault();
         e.stopPropagation();
@@ -2048,69 +774,17 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         return;
       }
 
-      // If shift key is pressed, don't clear selections (preserve multi-select intent)
       if (e.shiftKey) return;
-
-      // Check if clicking on tldraw canvas (not on UI elements)
       if (!target.closest('.tl-canvas')) return;
-
-      // NOTE: We intentionally do NOT clear annotations on click.
-      // Annotations persist until explicitly deleted by the user (via marker click).
-      // This ensures that once a user submits an annotation, it stays visible.
     };
 
     document.addEventListener('pointerdown', handlePointerDown, { capture: true });
     return () => document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
   }, [isActive, pendingAnnotation, handleAnnotationCancel]);
 
-  // Custom components
-  // Reference: https://tldraw.dev/examples/ui-components-hidden
-  const components: TLComponents = {
-    Toolbar: null,
-    Overlays: SkemaOverlays,
-    // Hide background to make canvas transparent (so website shows through)
-    Background: null,
-    // Hide UI elements we don't need
-    SharePanel: null,
-    MenuPanel: null,
-    TopPanel: null,
-    PageMenu: null,
-    NavigationPanel: null,
-    HelpMenu: null,
-    Minimap: null,
-    // Hide "Back to Content" button (HelperButtons contains this)
-    HelperButtons: null,
-    QuickActions: null,
-    ZoomMenu: null,
-    ActionsMenu: null,
-    DebugPanel: null,
-    DebugMenu: null,
-    // Hide canvas overlays
-    OnTheCanvas: null,
-    InFrontOfTheCanvas: null,
-  };
-
-  // UI overrides to add DOM picker and lasso select tools
-  const overrides: TLUiOverrides = {
-    tools(editor, tools) {
-      return {
-        ...tools,
-        'select': {
-          ...tools['select'],
-          kbd: 's',
-        },
-        'lasso-select': {
-          id: 'lasso-select',
-          label: 'Lasso Select',
-          icon: 'blob',
-          kbd: 'l',
-          onSelect: () => {
-            editor.setCurrentTool('lasso-select');
-          },
-        },
-      };
-    },
-  };
+  // =============================================================================
+  // Render
+  // =============================================================================
 
   if (!isActive) {
     return null;
@@ -2126,15 +800,8 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         pointerEvents: 'none',
       }}
     >
-      {/* Hide tldraw's "Back to Content" button */}
-      <style>{`
-        .tlui-button[data-testid="back-to-content"],
-        .tlui-offscreen-indicator,
-        [class*="back-to-content"],
-        .tl-offscreen-indicator {
-          display: none !important;
-        }
-      `}</style>
+      {/* Hide tldraw UI elements */}
+      <style>{skemaHiddenUiStyles}</style>
 
       {/* tldraw overlay */}
       <div
@@ -2146,15 +813,12 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       >
         <Tldraw
           tools={[LassoSelectTool]}
-          components={components}
-          overrides={overrides}
+          components={skemaComponents}
+          overrides={skemaOverrides}
           onMount={handleMount}
           hideUi={false}
           inferDarkMode={false}
-          options={{
-            // Disable camera constraints that would interfere with overlay mode
-            maxPages: 1,
-          }}
+          options={{ maxPages: 1 }}
         >
           <SkemaToolbar />
         </Tldraw>
@@ -2171,7 +835,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
         />
       )}
 
-      {/* Annotation markers (numbered indicators) */}
+      {/* Annotation markers */}
       <AnnotationMarkersLayer
         annotations={annotations}
         scrollOffset={scrollOffset}
@@ -2183,7 +847,6 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       {/* Pending annotation highlight and popup */}
       {pendingAnnotation && pendingAnnotation.boundingBox && (
         <>
-          {/* Highlight outline for pending selection */}
           <div
             data-skema="pending-highlight"
             style={{
@@ -2204,7 +867,6 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
             }}
           />
 
-          {/* Annotation popup */}
           <AnnotationPopup
             ref={popupRef}
             element={pendingAnnotation.element}
@@ -2222,15 +884,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
             isMultiSelect={pendingAnnotation.isMultiSelect}
             accentColor={pendingAnnotation.isMultiSelect ? '#34C759' : '#3b82f6'}
             style={{
-              // Position popup centered horizontally
-              left: Math.max(
-                160,
-                Math.min(
-                  window.innerWidth - 160,
-                  (pendingAnnotation.x / 100) * window.innerWidth
-                )
-              ),
-              // Position above or below based on viewport space
+              left: Math.max(160, Math.min(window.innerWidth - 160, (pendingAnnotation.x / 100) * window.innerWidth)),
               ...(pendingAnnotation.clientY > window.innerHeight - 250
                 ? { bottom: window.innerHeight - pendingAnnotation.clientY + 30 }
                 : { top: pendingAnnotation.clientY + 30 }),
@@ -2299,18 +953,7 @@ ${selections.length > 1 ? '*Forensic data shown for first element of selection*\
       )}
 
       {/* Toast animation styles */}
-      <style>{`
-        @keyframes skema-toast-fade {
-          from {
-            opacity: 0;
-            transform: translateX(-50%) translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateX(-50%) translateY(0);
-          }
-        }
-      `}</style>
+      <style>{skemaToastStyles}</style>
     </div>
   );
 };
