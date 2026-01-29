@@ -119,9 +119,9 @@ export const AnnotationsSidebar: React.FC<AnnotationsSidebarProps> = ({
                             }}
                         >
                             <div style={{ fontWeight: 500, marginBottom: '4px' }}>
-                                {annotation.type === 'dom_selection' && `🎯 ${(annotation as DOMSelection).tagName}`}
-                                {annotation.type === 'drawing' && `✏️ ${(annotation as DrawingAnnotation).comment || 'Drawing'}`}
-                                {annotation.type === 'gesture' && `👆 ${annotation.gesture}`}
+                                {annotation.type === 'dom_selection' && `[DOM] ${(annotation as DOMSelection).tagName}`}
+                                {annotation.type === 'drawing' && `[Draw] ${(annotation as DrawingAnnotation).comment || 'Drawing'}`}
+                                {annotation.type === 'gesture' && `[Gesture] ${annotation.gesture}`}
                             </div>
                             {annotation.type === 'dom_selection' && (
                                 <>

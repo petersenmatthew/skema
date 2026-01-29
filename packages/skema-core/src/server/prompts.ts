@@ -2,7 +2,6 @@
  * Skema AI Prompts
  *
  * This file contains all AI prompts used by Skema for generating code changes.
- * Each prompt is clearly named and documented for easy maintenance.
  *
  * Prompts:
  * - FAST_DOM_SELECTION_PROMPT: Quick, minimal prompt for DOM element changes

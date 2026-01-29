@@ -9,10 +9,10 @@ function init() {
 
   // Detect if this is a Next.js App Router project
   const appDir = existsSync(join(cwd, 'app')) ? join(cwd, 'app') :
-                 existsSync(join(cwd, 'src/app')) ? join(cwd, 'src/app') : null;
+    existsSync(join(cwd, 'src/app')) ? join(cwd, 'src/app') : null;
 
   if (!appDir) {
-    console.error('❌ Could not find app/ or src/app/ directory.');
+    console.error(' Could not find app/ or src/app/ directory.');
     console.error('   Make sure you run this from a Next.js App Router project root.');
     process.exit(1);
   }
@@ -22,21 +22,21 @@ function init() {
 
   // Check if route already exists
   if (existsSync(routePath)) {
-    console.log('✓ API route already exists at', routePath.replace(cwd, '.'));
+    console.log('[OK] API route already exists at', routePath.replace(cwd, '.'));
     return;
   }
 
   // Create directories if needed
   if (!existsSync(apiDir)) {
     mkdirSync(apiDir, { recursive: true });
-    console.log('✓ Created', apiDir.replace(cwd, '.'));
+    console.log('[OK] Created', apiDir.replace(cwd, '.'));
   }
 
   // Write the route file
   writeFileSync(routePath, ROUTE_CONTENT);
-  console.log('✓ Created', routePath.replace(cwd, '.'));
+  console.log('[OK] Created', routePath.replace(cwd, '.'));
   console.log('');
-  console.log('🎉 Skema is ready! The Gemini CLI integration is now set up.');
+  console.log('[Done] Skema is ready! The Gemini CLI integration is now set up.');
   console.log('');
   console.log('Usage:');
   console.log('  1. Add <Skema /> to your page');

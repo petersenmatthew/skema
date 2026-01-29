@@ -395,7 +395,7 @@ export function createGeminiCLIStream(
     async start(controller) {
       const apiKey = options?.apiKey || process.env.GEMINI_API_KEY;
       let visionDescription = '';
-      
+
       // Set up abort handler
       if (options?.signal) {
         options.signal.addEventListener('abort', () => {
@@ -418,12 +418,12 @@ export function createGeminiCLIStream(
       if (annotation.type === 'drawing' && (annotation as { drawingImage?: string }).drawingImage && apiKey) {
         // Check if cancelled before vision analysis
         if (isCancelled) return;
-        
+
         // Send a "progress" event to the client
         const progressEvent: GeminiCLIEvent = {
           type: 'message',
           role: 'assistant',
-          content: '🎨 Analyzing drawing image with Gemini Vision...',
+          content: '[Analyzing] Drawing image with Gemini Vision...',
           timestamp: new Date().toISOString()
         };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(progressEvent)}\n\n`));
@@ -433,7 +433,7 @@ export function createGeminiCLIStream(
           (annotation as { drawingImage: string }).drawingImage,
           options?.model || 'gemini-2.5-flash'
         );
-        
+
         // Check if cancelled after vision analysis
         if (isCancelled) return;
 
@@ -441,7 +441,7 @@ export function createGeminiCLIStream(
         const analysisEvent: GeminiCLIEvent = {
           type: 'message',
           role: 'assistant',
-          content: `👁️ Visual Analysis:\n${visionDescription}`,
+          content: `[Vision] Visual Analysis:\n${visionDescription}`,
           timestamp: new Date().toISOString()
         };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(analysisEvent)}\n\n`));
@@ -474,7 +474,7 @@ export function createGeminiCLIStream(
       for await (const event of events) {
         // Check if cancelled during processing
         if (isCancelled) break;
-        
+
         const sseData = `data: ${JSON.stringify(event)}\n\n`;
         controller.enqueue(encoder.encode(sseData));
 
