@@ -219,7 +219,7 @@ const handlers: Record<string, MessageHandler> = {
 
     // Build prompt using existing logic (with vision description if available)
     const prompt = buildPromptFromAnnotation(annotation, projectContext, {
-      fastMode: msg.fastMode !== false,
+      fastMode: msg.fastMode === true, // Default to detailed mode (false) unless explicitly set to true
       visionDescription,
     });
 

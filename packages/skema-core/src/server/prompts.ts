@@ -87,17 +87,22 @@ const JSX_VALIDATION_RULE = `JSX SYNTAX: Every opening tag (<div>, <a>, <span>, 
 export function buildFastDomSelectionPrompt(input: DomSelectionInput): string {
   const { comment, selector, text, tagName } = input;
 
-  // Build target description
-  let target = '';
+  // Build target description with both selector AND text for better context
+  const parts: string[] = [];
+
+  if (tagName) {
+    parts.push(`<${tagName.toLowerCase()}>`);
+  }
+  if (selector) {
+    parts.push(`selector: ${selector}`);
+  }
   if (text) {
-    target = `"${text.slice(0, 50)}"`;
-  } else if (selector) {
-    target = `\`${selector}\``;
-  } else if (tagName) {
-    target = `<${tagName.toLowerCase()}>`;
+    parts.push(`text: "${text.slice(0, 50)}"`);
   }
 
-  return `${comment}${target ? ` (target: ${target})` : ''}. Make the change directly, no explanation needed. ${CRITICAL_RULES} ${JSX_VALIDATION_RULE}`;
+  const target = parts.length > 0 ? ` (${parts.join(' | ')})` : '';
+
+  return `${comment}${target}. Make the change directly, no explanation needed. ${CRITICAL_RULES} ${JSX_VALIDATION_RULE}`;
 }
 
 // =============================================================================
