@@ -29,6 +29,7 @@ import {
   shouldIgnoreElement,
   findNearbyElementsWithStyles,
   extractProjectStyleContext,
+  getBoundingBox,
 } from '../utils/element-identification';
 import { blobToBase64, addGridToSvg, extractTextFromShapes } from '../lib/utils';
 
@@ -214,6 +215,117 @@ export const Skema: React.FC<SkemaProps> = ({
       }
     };
   }, []);
+
+  // Recalculate bounding boxes on window resize
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleResize = () => {
+      // Update domSelections bounding boxes
+      setDomSelections((prevSelections) => {
+        if (prevSelections.length === 0) return prevSelections;
+
+        return prevSelections.map((selection) => {
+          // Handle multi-select with individual elements
+          if (selection.isMultiSelect && selection.elements) {
+            const updatedElements = selection.elements.map((el) => {
+              const domElement = document.querySelector(el.selector) as HTMLElement | null;
+              if (domElement) {
+                return { ...el, boundingBox: getBoundingBox(domElement) };
+              }
+              return el;
+            });
+
+            // Recalculate combined bounding box
+            const validElements = updatedElements.filter((el) => {
+              const domEl = document.querySelector(el.selector);
+              return domEl !== null;
+            });
+
+            if (validElements.length > 0) {
+              const minX = Math.min(...updatedElements.map((e) => e.boundingBox.x));
+              const minY = Math.min(...updatedElements.map((e) => e.boundingBox.y));
+              const maxX = Math.max(...updatedElements.map((e) => e.boundingBox.x + e.boundingBox.width));
+              const maxY = Math.max(...updatedElements.map((e) => e.boundingBox.y + e.boundingBox.height));
+
+              return {
+                ...selection,
+                elements: updatedElements,
+                boundingBox: {
+                  x: minX,
+                  y: minY,
+                  width: maxX - minX,
+                  height: maxY - minY,
+                },
+              };
+            }
+            return selection;
+          }
+
+          // Single element selection
+          const domElement = document.querySelector(selection.selector) as HTMLElement | null;
+          if (domElement) {
+            return { ...selection, boundingBox: getBoundingBox(domElement) };
+          }
+          return selection;
+        });
+      });
+
+      // Update annotations bounding boxes for dom_selection types
+      setAnnotations((prevAnnotations) => {
+        if (prevAnnotations.length === 0) return prevAnnotations;
+
+        return prevAnnotations.map((annotation) => {
+          if (annotation.type !== 'dom_selection') return annotation;
+
+          // Handle multi-select with individual elements
+          if (annotation.isMultiSelect && annotation.elements) {
+            const updatedElements = annotation.elements.map((el) => {
+              const domElement = document.querySelector(el.selector) as HTMLElement | null;
+              if (domElement) {
+                return { ...el, boundingBox: getBoundingBox(domElement) };
+              }
+              return el;
+            });
+
+            const validElements = updatedElements.filter((el) => {
+              const domEl = document.querySelector(el.selector);
+              return domEl !== null;
+            });
+
+            if (validElements.length > 0) {
+              const minX = Math.min(...updatedElements.map((e) => e.boundingBox.x));
+              const minY = Math.min(...updatedElements.map((e) => e.boundingBox.y));
+              const maxX = Math.max(...updatedElements.map((e) => e.boundingBox.x + e.boundingBox.width));
+              const maxY = Math.max(...updatedElements.map((e) => e.boundingBox.y + e.boundingBox.height));
+
+              return {
+                ...annotation,
+                elements: updatedElements,
+                boundingBox: {
+                  x: minX,
+                  y: minY,
+                  width: maxX - minX,
+                  height: maxY - minY,
+                },
+              };
+            }
+            return annotation;
+          }
+
+          // Single element selection
+          const domElement = document.querySelector(annotation.selector) as HTMLElement | null;
+          if (domElement) {
+            return { ...annotation, boundingBox: getBoundingBox(domElement) };
+          }
+          return annotation;
+        });
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isActive]);
 
   // =============================================================================
   // Helper Functions

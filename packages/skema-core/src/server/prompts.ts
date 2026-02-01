@@ -65,7 +65,9 @@ export interface DrawingInput {
 const CRITICAL_RULES = `CRITICAL RULES:
 - Do NOT create new files. Only edit existing files.
 - Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.
-- Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.`;
+- Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.
+- Do NOT run any shell commands. No npm, no git, no lint, no build commands. Just edit files.
+- STOP immediately after making the file changes. Do not verify, do not run tests, do not check status.`;
 
 /**
  * JSX syntax validation reminder
@@ -261,7 +263,8 @@ ${DRAWING_ERROR_PREVENTION_RULES}`;
  */
 const DRAWING_IMPLEMENTATION_GUIDELINES = `- **CRITICAL: DO NOT CREATE ANY NEW FILES. NEVER CREATE NEW FILES. You must ONLY edit existing files.**
 - Add your code directly inline within the existing JSX of the page file - do NOT create separate component files.
-- DO NOT Modify anything other than react code, and don't run any commands. You won't need to.
+- DO NOT run any shell commands (no npm, git, lint, build, or verification commands). Just edit files and STOP.
+- After making your file edits, you are DONE. Do not run any follow-up commands or checks.
 - Write the UI as inline JSX elements (divs, sections, etc.) directly in the return statement - NOT as a separate component definition
 - Use Tailwind CSS classes for styling (the project uses Tailwind)
 - Do NOT use hardcoded pixel positions or absolute coordinates - integrate naturally with existing page flow

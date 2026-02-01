@@ -37,11 +37,13 @@ export function useScrollSync(
         // Initial sync
         syncScroll();
 
-        // Listen for scroll events
+        // Listen for scroll and resize events
         window.addEventListener('scroll', syncScroll, { passive: true });
+        window.addEventListener('resize', syncScroll);
 
         return () => {
             window.removeEventListener('scroll', syncScroll);
+            window.removeEventListener('resize', syncScroll);
         };
     }, [isActive, editorRef]);
 

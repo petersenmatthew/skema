@@ -14,13 +14,17 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections }
     const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
-        const handleScroll = () => {
+        const handleScrollOrResize = () => {
             setScrollPos({ x: window.scrollX, y: window.scrollY });
         };
         // Initial position
-        handleScroll();
-        window.addEventListener('scroll', handleScroll, { passive: true });
-        return () => window.removeEventListener('scroll', handleScroll);
+        handleScrollOrResize();
+        window.addEventListener('scroll', handleScrollOrResize, { passive: true });
+        window.addEventListener('resize', handleScrollOrResize);
+        return () => {
+            window.removeEventListener('scroll', handleScrollOrResize);
+            window.removeEventListener('resize', handleScrollOrResize);
+        };
     }, []);
 
     return (

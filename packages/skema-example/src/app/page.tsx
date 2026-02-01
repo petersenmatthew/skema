@@ -27,8 +27,8 @@ export default function OverviewPage() {
 
           {/* What is Skema */}
           <section className="mb-20">
-            <p className="leading-relaxed text-lg text-muted-foreground">
-              <ThemedLogo className="inline-block h-6 w-auto align-middle" /> is an <a href="https://www.npmjs.com/package/skema-core" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground no-underline transition-opacity hover:opacity-70">npm package</a> that provides a drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
+            <p className="leading-relaxed text-xl text-muted-foreground">
+              <ThemedLogo className="inline-block h-6 w-auto align-middle bg-red-100" /> is an <a href="https://www.npmjs.com/package/skema-core" className="rounded bg-green-100 px-1.5 py-0.5 font-mono text-sm text-green-600 no-underline transition-opacity hover:opacity-70">npm package</a> that provides a drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
             </p>
             <p className="mt-4 leading-relaxed text-lg text-muted-foreground">
               <strong className="text-foreground">We made website development drawable.</strong> Scribble on your localhost like a whiteboard,
