@@ -19,6 +19,9 @@ import { LassoSelectTool } from '../tools/LassoSelectTool';
 // Types
 import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotation } from '../types';
 
+// Hooks
+import { useDaemon } from '../hooks/useDaemon';
+
 // Utils
 import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
 import {
@@ -51,14 +54,15 @@ import { skemaComponents, skemaOverrides, skemaHiddenUiStyles, skemaToastStyles 
  */
 export const Skema: React.FC<SkemaProps> = ({
   enabled = true,
+  daemonUrl = 'ws://localhost:9999',
   onAnnotationsChange,
-  onAnnotationSubmit,
-  onAnnotationDelete,
-  onProcessingCancel,
+  onAnnotationSubmit: externalOnAnnotationSubmit,
+  onAnnotationDelete: externalOnAnnotationDelete,
+  onProcessingCancel: externalOnProcessingCancel,
   toggleShortcut = 'mod+shift+e',
   initialAnnotations = [],
   zIndex = 99999,
-  isProcessing = false,
+  isProcessing: externalIsProcessing,
 }) => {
   // =============================================================================
   // State
@@ -71,6 +75,85 @@ export const Skema: React.FC<SkemaProps> = ({
   const [hoveredMarkerId, setHoveredMarkerId] = useState<string | null>(null);
   const [processingBoundingBox, setProcessingBoundingBox] = useState<BoundingBox | null>(null);
   const [scribbleToast, setScribbleToast] = useState<string | null>(null);
+  const [internalIsProcessing, setInternalIsProcessing] = useState(false);
+
+  // Track annotation IDs to their change IDs for reverting
+  const annotationChangesRef = useRef<Map<string, string>>(new Map());
+
+  // =============================================================================
+  // Daemon Connection (auto-connect when daemonUrl is provided)
+  // =============================================================================
+  const {
+    state: daemonState,
+    isGenerating,
+    generate,
+    revert,
+  } = useDaemon({
+    url: daemonUrl || 'ws://localhost:9999',
+    autoConnect: daemonUrl !== null,
+    autoReconnect: daemonUrl !== null,
+  });
+
+  // Use external isProcessing if provided, otherwise use internal state
+  const isProcessing = externalIsProcessing !== undefined ? externalIsProcessing : (internalIsProcessing || isGenerating);
+
+  // =============================================================================
+  // Internal Handlers (used when external callbacks not provided)
+  // =============================================================================
+  const internalOnAnnotationSubmit = useCallback(async (annotation: Annotation, comment: string) => {
+    if (!daemonState.connected) {
+      console.warn('[Skema] Not connected to daemon. Run: npx skema-serve');
+      return;
+    }
+
+    setInternalIsProcessing(true);
+
+    try {
+      const result = await generate(
+        { ...annotation, comment },
+        (event) => {
+          // Log events to browser console
+          if (event.type === 'text') {
+            console.log(`%c[Skema ${daemonState.provider}]`, 'color: #10b981', event.content);
+          } else if (event.type === 'error') {
+            console.error('[Skema Error]', event.content);
+          }
+        }
+      );
+
+      // Track annotation ID for revert
+      if (result.annotationId) {
+        annotationChangesRef.current.set(annotation.id, result.annotationId);
+      }
+    } catch (error) {
+      console.error('[Skema] Failed to generate:', error);
+    } finally {
+      setInternalIsProcessing(false);
+    }
+  }, [daemonState.connected, daemonState.provider, generate]);
+
+  const internalOnAnnotationDelete = useCallback(async (annotationId: string) => {
+    const trackedId = annotationChangesRef.current.get(annotationId);
+    if (!trackedId) {
+      return;
+    }
+
+    try {
+      await revert(trackedId);
+      annotationChangesRef.current.delete(annotationId);
+    } catch (error) {
+      console.error('[Skema] Failed to revert:', error);
+    }
+  }, [revert]);
+
+  const internalOnProcessingCancel = useCallback(() => {
+    setInternalIsProcessing(false);
+  }, []);
+
+  // Use external callbacks if provided, otherwise use internal ones
+  const onAnnotationSubmit = externalOnAnnotationSubmit || (daemonUrl !== null ? internalOnAnnotationSubmit : undefined);
+  const onAnnotationDelete = externalOnAnnotationDelete || (daemonUrl !== null ? internalOnAnnotationDelete : undefined);
+  const onProcessingCancel = externalOnProcessingCancel || internalOnProcessingCancel;
 
   // =============================================================================
   // Refs

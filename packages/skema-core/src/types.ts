@@ -210,11 +210,23 @@ export interface AnnotationExport {
 export interface SkemaProps {
   /** Whether Skema overlay is enabled */
   enabled?: boolean;
+  /**
+   * WebSocket URL for the Skema daemon (default: ws://localhost:9999)
+   * When provided (or using default), Skema auto-connects and handles AI generation internally.
+   * Set to null to disable auto-connection (useful if providing custom callbacks).
+   */
+  daemonUrl?: string | null;
   /** Callback when annotations change */
   onAnnotationsChange?: (annotations: Annotation[]) => void;
-  /** Callback when a single annotation is submitted - for real-time integrations like Gemini */
+  /**
+   * Callback when a single annotation is submitted.
+   * If not provided and daemonUrl is set, Skema will auto-generate using the daemon.
+   */
   onAnnotationSubmit?: (annotation: Annotation, comment: string) => void;
-  /** Callback when an annotation is deleted - for reverting changes */
+  /**
+   * Callback when an annotation is deleted.
+   * If not provided and daemonUrl is set, Skema will auto-revert using the daemon.
+   */
   onAnnotationDelete?: (annotationId: string) => void;
   /** Keyboard shortcut to toggle Skema (default: Cmd/Ctrl + Shift + E) */
   toggleShortcut?: string;

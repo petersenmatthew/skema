@@ -25,9 +25,9 @@ export default defineConfig([
     treeshake: true,
     minify: false,
   },
-  // CLI tool
+  // Unified CLI (skema command)
   {
-    entry: { cli: 'src/cli/init.ts' },
+    entry: { cli: 'src/cli/index.ts' },
     format: ['cjs'],
     dts: false,
     splitting: false,

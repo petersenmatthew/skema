@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "bun run build && (bun run --filter skema-core watch & bun run --filter skema-example dev)",
     "build": "bun run --filter skema-core build",
-    "example": "bun run build && bun run --filter skema-example dev"
+    "example": "bun run build && bun run --filter skema-example dev",
+    "serve": "bun packages/skema-core/dist/cli.js"
   }
 }

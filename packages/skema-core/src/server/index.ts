@@ -35,3 +35,41 @@ export {
   type GestureInput,
   type DrawingInput,
 } from './prompts';
+
+// =============================================================================
+// WebSocket Daemon (Option 2)
+// =============================================================================
+
+export {
+  startDaemon,
+  type DaemonConfig,
+  type DaemonInstance,
+  type IncomingMessage,
+  type OutgoingMessage,
+} from './daemon';
+
+// =============================================================================
+// AI Provider Abstraction (Gemini/Claude switching)
+// =============================================================================
+
+export {
+  spawnAICLI,
+  runAICLI,
+  isProviderAvailable,
+  getAvailableProviders,
+  type AIProvider,
+  type AIProviderConfig,
+  type AIStreamEvent,
+  type AIRunResult,
+} from './ai-provider';
+
+// =============================================================================
+// Vision Analysis (Image/Drawing Analysis)
+// =============================================================================
+
+export {
+  analyzeImage,
+  isVisionAvailable,
+  type VisionAnalysisResult,
+  type VisionConfig,
+} from './vision';

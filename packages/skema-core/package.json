@@ -61,13 +61,16 @@
     "react-dom": ">=19.0.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.24.1",
-    "tldraw": "^3.15.5"
+    "tldraw": "^3.15.5",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.5.13",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.0.0",

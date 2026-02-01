@@ -16,8 +16,15 @@ export { Skema, default } from './components';
 export { AnnotationPopup } from './components';
 export type { AnnotationPopupProps, AnnotationPopupHandle } from './components';
 
-// Tools
-
+// Hooks
+export { useDaemon } from './hooks/useDaemon';
+export type {
+  UseDaemonOptions,
+  UseDaemonReturn,
+  DaemonState,
+  AIProvider,
+  AIStreamEvent,
+} from './hooks/useDaemon';
 
 // Utilities
 export {
