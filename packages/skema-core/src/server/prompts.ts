@@ -122,22 +122,45 @@ export function buildFastDomSelectionPrompt(input: DomSelectionInput): string {
  * })
  */
 export function buildDetailedDomSelectionPrompt(input: DetailedDomSelectionInput): string {
-  const { comment, tagName, selector, text, elements } = input;
+  const { comment, tagName, selector, text, elementPath, cssClasses, attributes, elements } = input;
 
   let prompt = `Make this code change: "${comment || 'No specific comment provided'}"
 
-Element: <${tagName?.toLowerCase() || 'unknown'}>`;
+## Target Element
+- Tag: <${tagName?.toLowerCase() || 'unknown'}>`;
 
   if (selector) {
-    prompt += ` | selector: ${selector}`;
+    prompt += `\n- Selector: ${selector}`;
+  }
+
+  if (elementPath) {
+    prompt += `\n- DOM Path: ${elementPath}`;
+  }
+
+  if (cssClasses) {
+    prompt += `\n- CSS Classes: ${cssClasses}`;
+  }
+
+  if (attributes && Object.keys(attributes).length > 0) {
+    const attrStr = Object.entries(attributes)
+      .map(([k, v]) => `${k}="${v}"`)
+      .join(', ');
+    prompt += `\n- Attributes: ${attrStr}`;
   }
 
   if (text) {
-    prompt += ` | text: "${text.slice(0, 100)}"`;
+    prompt += `\n- Text Content: "${text.slice(0, 150)}"`;
   }
 
   if (elements && elements.length > 1) {
-    prompt += `\n${elements.length} elements selected`;
+    prompt += `\n\n## Multi-Selection (${elements.length} elements)`;
+    elements.slice(0, 5).forEach((el, i) => {
+      prompt += `\n${i + 1}. <${el.tagName}> ${el.selector}`;
+      if (el.text) prompt += ` - "${el.text.slice(0, 50)}"`;
+    });
+    if (elements.length > 5) {
+      prompt += `\n... and ${elements.length - 5} more`;
+    }
   }
 
   prompt += `
