@@ -36,23 +36,70 @@ This is a Bun workspaces monorepo with two packages:
 
 The package has three entry points configured in `tsup.config.ts`:
 1. **Client** (`index.ts`) - React component + utilities for browser
-2. **Server** (`server/index.ts`) - Node.js utilities (Gemini integration)
+2. **Server** (`server/index.ts`) - Node.js utilities (daemon, AI providers, vision)
 3. **CLI** (`cli/index.ts`) - Executable script with shebang
 
 ## Architecture
 
+### Daemon-based AI Generation
+
+Skema uses a WebSocket daemon instead of API routes for AI code generation:
+
+**Terminal** (runs daemon):
+```bash
+npx skema                    # Start daemon (default port 9999)
+npx skema --port 8080        # Custom port
+npx skema --provider claude  # Use Claude Code CLI instead of Gemini
+```
+
+**Browser** (Skema component):
+- Auto-connects to `ws://localhost:9999` via the `useDaemon` hook
+- Sends annotations, receives streaming AI responses
+- Daemon spawns AI CLI (`gemini` or `claude`) and streams output back
+
+**Flow**:
+1. User creates annotation in browser → Skema component
+2. Component sends annotation to daemon via WebSocket
+3. Daemon creates git snapshot (for undo), builds prompt, spawns AI CLI
+4. AI CLI streams JSON events → daemon → browser
+5. User can revert changes per-annotation using git snapshots
+
+### AI Provider System (`src/server/ai-provider.ts`)
+
+Supports pluggable AI backends:
+- **Gemini CLI** (`gemini -p <prompt> --yolo --output-format stream-json`)
+- **Claude Code CLI** (`claude -p <prompt> --dangerously-skip-permissions --output-format stream-json`)
+
+Both CLIs must be installed globally. The daemon auto-detects available providers.
+
+### Vision Analysis (`src/server/vision.ts`)
+
+For drawing annotations, Skema uses vision APIs to analyze the image:
+- Uses `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` environment variables
+- Vision description is appended to the prompt before sending to AI CLI
+
 ### Core Component (`src/components/Skema.tsx`)
 
-The main component (~1800 lines) manages:
+The main component manages:
 - tldraw editor as transparent overlay with scroll-synced camera
 - Annotation state (DOM selections, drawings, gestures)
-- Custom toolbar with 5 tool buttons (select, draw, lasso, erase, placeholder)
+- Custom toolbar with tool buttons (select, draw, lasso, erase, shapes)
 - AnnotationMarker numbered indicators
 - SelectionOverlay green highlight on DOM elements
 - AnnotationPopup modal for comments
 - AnnotationsSidebar with export functionality
+- ProcessingOverlay for AI generation status
 
 Toggle shortcut: **⌘⇧E** (Cmd+Shift+E / Ctrl+Shift+E)
+
+### useDaemon Hook (`src/hooks/useDaemon.ts`)
+
+React hook for daemon communication:
+- `state.connected`, `state.provider`, `state.availableProviders`
+- `generate(annotation, onEvent)` - streams AI events
+- `revert(annotationId)` - undoes changes for specific annotation
+- `setProvider(provider)` - switches between gemini/claude
+- Auto-reconnects on disconnect
 
 ### Custom Tools
 
@@ -67,7 +114,8 @@ Core types for annotation system:
 - `DrawingAnnotation` - tldraw shapes with SVG/PNG export
 - `GestureAnnotation` - Recognized gestures (circle, scribble-delete)
 - `Annotation` - Union of all annotation types
-- `AnnotationExport` - Full export format with viewport metadata
+- `SkemaProps` - Component props including `daemonUrl`, callbacks
+- `AIStreamEvent` - Streaming events from AI CLI
 
 ### Utilities
 
@@ -78,7 +126,8 @@ Core types for annotation system:
 ## Key Dependencies
 
 - **tldraw@3.15.5** - Drawing library (StateNode pattern for custom tools)
-- **@google/generative-ai** - Gemini AI integration
+- **@google/generative-ai** - Gemini vision API (for image analysis)
+- **ws** - WebSocket server for daemon
 - **React 19** - Peer dependency
 
 ## Next.js Integration Notes

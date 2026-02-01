@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { startDaemon } from '../server/daemon';
 
 const args = process.argv.slice(2);
