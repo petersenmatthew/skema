@@ -533,6 +533,10 @@ export const Skema: React.FC<SkemaProps> = ({
   const handleAnnotationSubmit = useCallback(async (comment: string) => {
     if (!pendingAnnotation) return;
 
+    // Generate IDs once to ensure consistency between state and callback
+    const now = Date.now();
+    let submittedAnnotation: Annotation | undefined;
+
     if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
       const selections = pendingAnnotation.selections;
 
@@ -540,15 +544,16 @@ export const Skema: React.FC<SkemaProps> = ({
         const selection = { ...selections[0], comment };
         setDomSelections((prev) => [...prev, selection]);
         setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...selection }]);
+        submittedAnnotation = { type: 'dom_selection' as const, ...selections[0], comment };
       } else {
         const groupedSelection: DOMSelection = {
-          id: `group-${Date.now()}`,
+          id: `group-${now}`,
           selector: selections.map(s => s.selector).join(', '),
           tagName: pendingAnnotation.element,
           elementPath: selections[0].elementPath,
           text: selections.map(s => s.text).filter(Boolean).join(' | ').slice(0, 200),
           boundingBox: pendingAnnotation.boundingBox!,
-          timestamp: Date.now(),
+          timestamp: now,
           pathname: selections[0].pathname,
           comment,
           isMultiSelect: true,
@@ -564,121 +569,74 @@ export const Skema: React.FC<SkemaProps> = ({
         };
         setDomSelections((prev) => [...prev, groupedSelection]);
         setAnnotations((prev) => [...prev, { type: 'dom_selection' as const, ...groupedSelection }]);
+        submittedAnnotation = { type: 'dom_selection' as const, ...groupedSelection };
       }
     } else if (pendingAnnotation.annotationType === 'drawing' && pendingAnnotation.shapeIds) {
-      const bbox = pendingAnnotation.boundingBox!;
-      const nearbyElements = pendingAnnotation.selections?.map(s => ({
-        selector: s.selector,
-        tagName: s.tagName,
-        text: s.text?.slice(0, 100),
-      })) || [];
+      // Drawing annotation - extract SVG, PNG image
+      const editor = editorRef.current;
+      let drawingSvg: string | undefined;
+      let drawingImage: string | undefined;
+      let extractedText: string | undefined;
+      const gridConfig = { color: '#0066FF', size: 100, labels: true };
 
+      if (editor && pendingAnnotation.shapeIds && pendingAnnotation.shapeIds.length > 0) {
+        const shapeIds = pendingAnnotation.shapeIds as TLShapeId[];
+
+        try {
+          const svgResult = await editor.getSvgString(shapeIds, { padding: 20, background: false });
+          if (svgResult?.svg) {
+            drawingSvg = addGridToSvg(svgResult.svg, gridConfig);
+          }
+        } catch (e) {
+          console.warn('[Skema] Failed to export drawing SVG:', e);
+        }
+
+        try {
+          const imageResult = await editor.toImage(shapeIds, { format: 'png', padding: 20, background: true });
+          if (imageResult?.blob) {
+            drawingImage = await blobToBase64(imageResult.blob);
+          }
+        } catch (e) {
+          console.warn('[Skema] Failed to export drawing image:', e);
+        }
+
+        try {
+          const shapes = shapeIds.map(id => editor.getShape(id)).filter(Boolean);
+          extractedText = extractTextFromShapes(shapes);
+        } catch (e) {
+          console.warn('[Skema] Failed to extract text from shapes:', e);
+        }
+      }
+
+      const nearbyElements = pendingAnnotation.boundingBox
+        ? findNearbyElementsWithStyles(pendingAnnotation.boundingBox, 5)
+        : [];
+      const projectStyles = extractProjectStyleContext();
+      const viewport = getViewportInfo();
+
+      // Create the drawing annotation once with consistent ID
       const drawingAnnotation: Annotation = {
-        id: `drawing-${Date.now()}`,
+        id: `drawing-${now}`,
         type: 'drawing',
         tool: 'draw',
         shapes: pendingAnnotation.shapeIds,
-        boundingBox: bbox,
-        timestamp: Date.now(),
+        boundingBox: pendingAnnotation.boundingBox!,
+        timestamp: now,
         comment,
+        drawingSvg,
+        drawingImage,
+        extractedText: extractedText || undefined,
+        gridConfig,
         nearbyElements,
+        viewport,
+        projectStyles,
       };
       setAnnotations((prev) => [...prev, drawingAnnotation]);
+      submittedAnnotation = drawingAnnotation;
     }
 
-    // Call onAnnotationSubmit callback
-    if (onAnnotationSubmit) {
-      let submittedAnnotation: Annotation;
-
-      if (pendingAnnotation.annotationType === 'dom_selection' && pendingAnnotation.selections) {
-        const selections = pendingAnnotation.selections;
-        if (selections.length === 1) {
-          submittedAnnotation = { type: 'dom_selection' as const, ...selections[0], comment };
-        } else {
-          submittedAnnotation = {
-            type: 'dom_selection' as const,
-            id: `group-${Date.now()}`,
-            selector: selections.map(s => s.selector).join(', '),
-            tagName: pendingAnnotation.element,
-            elementPath: selections[0].elementPath,
-            text: selections.map(s => s.text).filter(Boolean).join(' | ').slice(0, 200),
-            boundingBox: pendingAnnotation.boundingBox!,
-            timestamp: Date.now(),
-            pathname: selections[0].pathname,
-            comment,
-            isMultiSelect: true,
-            elements: selections.map(s => ({
-              selector: s.selector,
-              tagName: s.tagName,
-              elementPath: s.elementPath,
-              text: s.text,
-              boundingBox: s.boundingBox,
-              cssClasses: s.cssClasses,
-              attributes: s.attributes,
-            })),
-          };
-        }
-      } else {
-        // Drawing annotation - extract SVG, PNG image
-        const editor = editorRef.current;
-        let drawingSvg: string | undefined;
-        let drawingImage: string | undefined;
-        let extractedText: string | undefined;
-        const gridConfig = { color: '#0066FF', size: 100, labels: true };
-
-        if (editor && pendingAnnotation.shapeIds && pendingAnnotation.shapeIds.length > 0) {
-          const shapeIds = pendingAnnotation.shapeIds as TLShapeId[];
-
-          try {
-            const svgResult = await editor.getSvgString(shapeIds, { padding: 20, background: false });
-            if (svgResult?.svg) {
-              drawingSvg = addGridToSvg(svgResult.svg, gridConfig);
-            }
-          } catch (e) {
-            console.warn('[Skema] Failed to export drawing SVG:', e);
-          }
-
-          try {
-            const imageResult = await editor.toImage(shapeIds, { format: 'png', padding: 20, background: true });
-            if (imageResult?.blob) {
-              drawingImage = await blobToBase64(imageResult.blob);
-            }
-          } catch (e) {
-            console.warn('[Skema] Failed to export drawing image:', e);
-          }
-
-          try {
-            const shapes = shapeIds.map(id => editor.getShape(id)).filter(Boolean);
-            extractedText = extractTextFromShapes(shapes);
-          } catch (e) {
-            console.warn('[Skema] Failed to extract text from shapes:', e);
-          }
-        }
-
-        const nearbyElements = pendingAnnotation.boundingBox
-          ? findNearbyElementsWithStyles(pendingAnnotation.boundingBox, 5)
-          : [];
-        const projectStyles = extractProjectStyleContext();
-        const viewport = getViewportInfo();
-
-        submittedAnnotation = {
-          id: `drawing-${Date.now()}`,
-          type: 'drawing',
-          tool: 'draw',
-          shapes: pendingAnnotation.shapeIds || [],
-          boundingBox: pendingAnnotation.boundingBox!,
-          timestamp: Date.now(),
-          comment,
-          drawingSvg,
-          drawingImage,
-          extractedText: extractedText || undefined,
-          gridConfig,
-          nearbyElements,
-          viewport,
-          projectStyles,
-        };
-      }
-
+    // Call onAnnotationSubmit callback with the same annotation object
+    if (onAnnotationSubmit && submittedAnnotation) {
       if (pendingAnnotation.boundingBox) {
         setProcessingBoundingBox(pendingAnnotation.boundingBox);
       }
