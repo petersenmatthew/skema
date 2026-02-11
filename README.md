@@ -75,7 +75,7 @@ export default function Page() {
 In a separate terminal, start the Skema daemon in your project directory:
 
 ```bash
-npx skema
+npx skema-core
 ```
 
 The daemon runs a WebSocket server that:
@@ -90,13 +90,15 @@ That's it! Press **⌘⇧E** (Cmd+Shift+E) to toggle the Skema overlay.
 ## Daemon Options
 
 ```bash
-npx skema                      # Start daemon (default port 9999)
-npx skema --port 8080          # Custom port
-npx skema --provider claude    # Use Claude Code CLI instead of Gemini
-npx skema --dir /path/to/proj  # Set working directory
-npx skema init                 # Initialize project (creates config files)
-npx skema help                 # Show help
+npx skema-core                      # Start daemon (default port 9999)
+npx skema-core --port 8080          # Custom port
+npx skema-core --provider claude    # Use Claude Code CLI instead of Gemini
+npx skema-core --dir /path/to/proj  # Set working directory
+npx skema-core init                 # Initialize project (creates config files)
+npx skema-core help                 # Show help
 ```
+
+> **Note**: After installing `skema-core`, you can also use the `skema` command directly (e.g., `skema init`).
 
 ## Keyboard Shortcuts
 
@@ -139,20 +141,22 @@ bun run dev
 - `bun run build` - Build the skema-core package
 - `bun run dev` - Build core and run example in watch mode
 - `bun run example` - Run the example Next.js app
+- `bun run skema` - Run the Skema CLI/daemon locally
+- `bun run skema:init` - Run Skema init locally
 
 ## Architecture
 
 ```
 ┌──────────────────┐     WebSocket     ┌─────────────────┐
 │  Browser         │ ←───────────────→ │  Daemon         │
-│  (Skema overlay) │                   │  (npx skema)    │
+│  (Skema overlay) │                   │  (skema-core)   │
 └──────────────────┘                   └────────┬────────┘
-                                                │ spawns
-                                                ▼
-                                       ┌─────────────────┐
-                                       │  AI CLI         │
-                                       │  (gemini/claude)│
-                                       └─────────────────┘
+                                               │ spawns
+                                               ▼
+                                      ┌─────────────────┐
+                                      │  AI CLI         │
+                                      │  (gemini/claude)│
+                                      └─────────────────┘
 ```
 
 1. User creates annotation in browser

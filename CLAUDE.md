@@ -23,6 +23,12 @@ bun run dev
 
 # Build core in watch mode only
 bun run --filter skema-core watch
+
+# Run Skema CLI/daemon locally
+bun run skema
+
+# Run Skema init locally
+bun run skema:init
 ```
 
 ## Monorepo Structure
@@ -47,9 +53,14 @@ Skema uses a WebSocket daemon instead of API routes for AI code generation:
 
 **Terminal** (runs daemon):
 ```bash
-npx skema                    # Start daemon (default port 9999)
-npx skema --port 8080        # Custom port
-npx skema --provider claude  # Use Claude Code CLI instead of Gemini
+# For local development in this repo:
+bun run skema                    # Start daemon (default port 9999)
+bun run skema -- --port 8080     # Custom port
+bun run skema -- --provider claude  # Use Claude Code CLI
+
+# For end users (after npm install skema-core):
+npx skema-core                   # Start daemon
+npx skema-core --port 8080       # Custom port
 ```
 
 **Browser** (Skema component):

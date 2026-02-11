@@ -9,9 +9,9 @@ function printHelp() {
   console.log('  Skema - Drawing-based website development');
   console.log('');
   console.log('  Usage:');
-  console.log('    npx skema          Start the daemon (default)');
-  console.log('    npx skema init     Configure your project');
-  console.log('    npx skema help     Show this help');
+  console.log('    npx skema-core          Start the daemon (default)');
+  console.log('    npx skema-core init     Configure your project');
+  console.log('    npx skema-core help     Show this help');
   console.log('');
   console.log('  Options (for daemon):');
   console.log('    -p, --port <port>  Port number (default: 9999)');
@@ -19,9 +19,11 @@ function printHelp() {
   console.log('    --provider <name>  Default AI provider (gemini|claude)');
   console.log('');
   console.log('  Examples:');
-  console.log('    npx skema');
-  console.log('    npx skema --port 8080');
-  console.log('    npx skema init');
+  console.log('    npx skema-core');
+  console.log('    npx skema-core --port 8080');
+  console.log('    npx skema-core init');
+  console.log('');
+  console.log('  Note: After installing skema-core, you can also use "skema" directly.');
   console.log('');
 }
 

@@ -10,6 +10,8 @@
     "dev": "bun run build && (bun run --filter skema-core watch & bun run --filter skema-example dev)",
     "build": "bun run --filter skema-core build",
     "example": "bun run build && bun run --filter skema-example dev",
-    "serve": "bun packages/skema-core/dist/cli.js"
+    "serve": "bun packages/skema-core/dist/cli.js",
+    "skema": "node packages/skema-core/dist/cli.js",
+    "skema:init": "node packages/skema-core/dist/cli.js init"
   }
 }
