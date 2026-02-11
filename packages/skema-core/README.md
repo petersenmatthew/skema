@@ -1,6 +1,15 @@
-# Skema
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/petersenmatthew/skema/main/assets/logo-dark.svg">
+    <img src="https://raw.githubusercontent.com/petersenmatthew/skema/main/assets/logo-light.svg" alt="Skema" width="400">
+  </picture>
+</p>
 
-A drawing-based website development tool that transforms how you annotate and communicate design changes.
+<p align="center">
+  A drawing-based website development tool that transforms how you annotate and communicate design changes.
+</p>
+
+---
 
 ## Overview
 
