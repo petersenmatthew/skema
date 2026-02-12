@@ -13,7 +13,7 @@
 
 ## Overview
 
-Skema is a React component that provides a tldraw-powered drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page. Combined with AI, your annotations become code changes.
+Skema is an npm package that provides a tldraw-powered drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page. Combined with AI, your annotations become code changes.
 
 ## Features
 

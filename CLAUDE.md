@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Skema is a drawing-based website development tool - a React component that provides a tldraw-powered overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website as a transparent overlay (NOT a canvas tool).
+Skema is a drawing-based website development tool - an npm package that provides a tldraw-powered overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website as a transparent overlay (NOT a canvas tool).
 
 ## Commands
 
@@ -35,7 +35,7 @@ bun run skema:init
 
 This is a Bun workspaces monorepo with two packages:
 
-- **skema-core** - Main React component library (published as `skema-core`)
+- **skema-core** - Main package (published as `skema-core`)
 - **skema-example** - Next.js demo application
 
 ### skema-core Build Outputs
