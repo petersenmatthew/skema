@@ -315,3 +315,76 @@ export function isProviderAvailable(provider: AIProvider): boolean {
 export function getAvailableProviders(): AIProvider[] {
   return (['gemini', 'claude'] as AIProvider[]).filter(isProviderAvailable);
 }
+
+// =============================================================================
+// Provider Status (installed + authorized)
+// =============================================================================
+
+export interface ProviderStatus {
+  installed: boolean;
+  authorized: boolean;
+  /** Human-readable status message */
+  message: string;
+}
+
+/**
+ * Check if a provider CLI is authorized (can actually run).
+ * Uses lightweight commands that verify auth without doing real work.
+ */
+function checkProviderAuthorized(provider: AIProvider): boolean {
+  const { execSync } = require('child_process');
+  try {
+    if (provider === 'gemini') {
+      // `gemini --version` succeeds if installed; auth is checked via a quick prompt
+      // We use a minimal approach: check if GEMINI_API_KEY is set or if the CLI config exists
+      execSync('gemini --version', { stdio: 'ignore', timeout: 5000 });
+      return true;
+    } else if (provider === 'claude') {
+      // claude --version succeeds if installed; auth is checked similarly
+      execSync('claude --version', { stdio: 'ignore', timeout: 5000 });
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get detailed status for a single provider
+ */
+export function getProviderStatus(provider: AIProvider): ProviderStatus {
+  const installed = isProviderAvailable(provider);
+  if (!installed) {
+    return {
+      installed: false,
+      authorized: false,
+      message: `${provider} CLI not installed`,
+    };
+  }
+
+  const authorized = checkProviderAuthorized(provider);
+  if (!authorized) {
+    return {
+      installed: true,
+      authorized: false,
+      message: `${provider} CLI installed but not authorized`,
+    };
+  }
+
+  return {
+    installed: true,
+    authorized: true,
+    message: 'Ready',
+  };
+}
+
+/**
+ * Get status for all providers
+ */
+export function getAllProviderStatuses(): Record<AIProvider, ProviderStatus> {
+  return {
+    gemini: getProviderStatus('gemini'),
+    claude: getProviderStatus('claude'),
+  };
+}

@@ -8,12 +8,19 @@ import type { Annotation } from '../types';
 export type ProviderName = 'gemini' | 'claude';
 export type ExecutionMode = 'direct-cli' | 'mcp';
 
+export interface ProviderStatus {
+  installed: boolean;
+  authorized: boolean;
+  message: string;
+}
+
 export interface DaemonState {
   connected: boolean;
   provider: ProviderName;
   mode: ExecutionMode;
   availableProviders: ProviderName[];
   availableModes: ExecutionMode[];
+  providerStatus: Record<ProviderName, ProviderStatus>;
   cwd: string;
 }
 
@@ -58,6 +65,8 @@ export interface UseDaemonReturn {
   setProvider: (provider: ProviderName) => Promise<boolean>;
   /** Switch execution mode */
   setMode: (mode: ExecutionMode) => Promise<boolean>;
+  /** Refresh provider status from daemon */
+  refreshProviderStatus: () => Promise<void>;
   /** Generate code from annotation (streaming) */
   generate: (
     annotation: Partial<Annotation> & { comment?: string },
@@ -86,12 +95,18 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     reconnectDelay = 2000,
   } = options;
 
+  const defaultProviderStatus: Record<ProviderName, ProviderStatus> = {
+    gemini: { installed: false, authorized: false, message: 'Checking...' },
+    claude: { installed: false, authorized: false, message: 'Checking...' },
+  };
+
   const [state, setState] = useState<DaemonState>({
     connected: false,
     provider: 'gemini',
     mode: 'direct-cli',
     availableProviders: [],
     availableModes: ['direct-cli', 'mcp'],
+    providerStatus: defaultProviderStatus,
     cwd: '',
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -146,9 +161,19 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           mode: msg.mode || prev.mode,
           availableProviders: msg.availableProviders || prev.availableProviders,
           availableModes: msg.availableModes || prev.availableModes,
+          providerStatus: msg.providerStatus || prev.providerStatus,
           cwd: msg.cwd || prev.cwd,
         }));
         setError(null);
+        return;
+      }
+
+      // Handle provider status update
+      if (msg.type === 'provider-statuses') {
+        setState((prev) => ({
+          ...prev,
+          providerStatus: msg.providerStatus || prev.providerStatus,
+        }));
         return;
       }
 
@@ -309,6 +334,15 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     }
   }, [sendRequest]);
 
+  // Refresh provider status from daemon
+  const refreshProviderStatus = useCallback(async () => {
+    try {
+      await sendRequest('check-providers', {});
+    } catch (e) {
+      console.error('[useDaemon] Failed to refresh provider status:', e);
+    }
+  }, [sendRequest]);
+
   // Generate code from annotation
   const generate = useCallback(async (
     annotation: Partial<Annotation> & { comment?: string },
@@ -390,6 +424,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     disconnect,
     setProvider,
     setMode,
+    refreshProviderStatus,
     generate,
     revert,
     readFile,

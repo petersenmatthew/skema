@@ -1058,6 +1058,7 @@ export const Skema: React.FC<SkemaProps> = ({
         mode={daemonState.mode}
         provider={daemonState.provider}
         availableProviders={daemonState.availableProviders}
+        providerStatus={daemonState.providerStatus}
         onModeChange={setMode}
         onProviderChange={setProvider}
         theme={theme}

@@ -8,6 +8,8 @@ import {
   spawnAICLI,
   isProviderAvailable,
   getAvailableProviders as getCLIProviders,
+  getAllProviderStatuses,
+  type ProviderStatus,
 } from './ai-provider';
 import { buildPromptFromAnnotation, type ProjectContext } from './gemini-cli';
 import { analyzeImage, isVisionAvailable } from './vision';
@@ -164,6 +166,15 @@ const handlers: Record<string, MessageHandler> = {
     currentProvider = newProvider;
     console.log(`[Daemon] Switched to provider: ${currentProvider}`);
     return { id: msg.id, type: 'provider-changed', provider: currentProvider };
+  },
+
+  'check-providers': async (msg) => {
+    const statuses = getAllProviderStatuses();
+    return {
+      id: msg.id,
+      type: 'provider-statuses',
+      providerStatus: statuses,
+    };
   },
 
   // -------------------------------------------------------------------------
@@ -617,6 +628,7 @@ function handleConnection(ws: WebSocket) {
     availableProviders: getCLIProviders(),
     availableModes: ['direct-cli', 'mcp'] as ExecutionMode[],
     pendingAnnotations: currentMode === 'mcp' ? getPendingCount() : 0,
+    providerStatus: getAllProviderStatuses(),
   });
 
   ws.on('message', async (data) => {
