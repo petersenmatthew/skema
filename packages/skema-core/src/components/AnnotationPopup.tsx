@@ -2,7 +2,8 @@
 // Annotation Popup Component
 // =============================================================================
 // A popup that appears when selecting DOM elements or drawings, allowing users
-// to add comments to their annotations. Inspired by agentation's implementation.
+// to add comments to their annotations. Matches Skema's white floating card
+// design language with playful geometric accent shapes.
 
 import React, {
   useState,
@@ -48,7 +49,47 @@ export interface AnnotationPopupHandle {
 }
 
 // =============================================================================
-// Styles
+// Geometric Accent Shape
+// =============================================================================
+
+/** Small decorative shape that indicates annotation type via color */
+const AccentShape: React.FC<{ color: string; isMultiSelect: boolean }> = ({ color, isMultiSelect }) => {
+  // Green (#34C759) = multi-select → square
+  // Purple (#8B5CF6) = drawing → star
+  // Blue (#3b82f6) = single DOM → circle (default)
+  const isDrawing = color === '#8B5CF6';
+
+  if (isMultiSelect && !isDrawing) {
+    // Green square for multi-select
+    return (
+      <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0 }}>
+        <rect x="1" y="1" width="8" height="8" rx="1.5" fill={color} />
+      </svg>
+    );
+  }
+
+  if (isDrawing) {
+    // Star for drawing annotations
+    return (
+      <svg width="12" height="12" viewBox="0 0 12 12" style={{ flexShrink: 0 }}>
+        <path
+          d="M6 1L7.4 4.2L10.8 4.6L8.2 7L8.9 10.4L6 8.7L3.1 10.4L3.8 7L1.2 4.6L4.6 4.2L6 1Z"
+          fill={color}
+        />
+      </svg>
+    );
+  }
+
+  // Circle for single DOM selection
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" style={{ flexShrink: 0 }}>
+      <circle cx="5" cy="5" r="4" fill={color} />
+    </svg>
+  );
+};
+
+// =============================================================================
+// Styles — White floating card matching Skema toolbar aesthetic
 // =============================================================================
 
 const styles = {
@@ -56,10 +97,10 @@ const styles = {
     position: 'fixed' as const,
     transform: 'translateX(-50%)',
     width: 280,
-    padding: '12px 16px 14px',
-    background: '#1a1a1a',
+    padding: '14px 16px 14px',
+    background: '#FFFFFF',
     borderRadius: 16,
-    boxShadow: '0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+    boxShadow: '0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06)',
     cursor: 'default',
     zIndex: 100001,
     fontFamily: '"Clash Display", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
@@ -72,56 +113,67 @@ const styles = {
   },
   popupExit: {
     opacity: 0,
-    transform: 'translateX(-50%) scale(0.95) translateY(4px)',
+    transform: 'translateX(-50%) scale(0.96) translateY(4px)',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 9,
+    gap: 7,
+    marginBottom: 10,
   },
   element: {
     fontSize: 12,
-    fontWeight: 400,
-    color: 'rgba(255, 255, 255, 0.5)',
+    fontWeight: 500,
+    color: '#9CA3AF',
     maxWidth: '100%',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
     flex: 1,
+    letterSpacing: '0.01em',
   },
   quote: {
     fontSize: 12,
     fontStyle: 'italic' as const,
-    color: 'rgba(255, 255, 255, 0.6)',
+    color: '#6B7280',
     marginBottom: 8,
-    padding: '6px 8px',
-    background: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 4,
+    padding: '6px 9px',
+    background: '#F9FAFB',
+    borderRadius: 6,
     lineHeight: 1.45,
+    borderLeft: '2px solid',
   },
   textarea: {
     width: '100%',
-    padding: '8px 10px',
+    padding: '9px 11px',
     fontSize: 13,
     fontFamily: 'inherit',
-    background: 'rgba(255, 255, 255, 0.05)',
-    color: '#fff',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    borderRadius: 8,
+    background: '#F9FAFB',
+    color: '#1a1a1a',
+    border: '1px solid #E5E7EB',
+    borderRadius: 10,
     resize: 'none' as const,
     outline: 'none',
-    transition: 'border-color 0.15s ease',
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
     boxSizing: 'border-box' as const,
-  },
-  textareaFocused: {
-    borderColor: '#3c82f7',
+    lineHeight: 1.5,
   },
   actions: {
     display: 'flex',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  hint: {
+    fontSize: 11,
+    color: '#C0C5CE',
+    fontWeight: 400,
+    letterSpacing: '0.01em',
+    userSelect: 'none' as const,
+  },
+  buttonGroup: {
+    display: 'flex',
     gap: 6,
-    marginTop: 8,
   },
   button: {
     padding: '6px 14px',
@@ -130,11 +182,11 @@ const styles = {
     borderRadius: 16,
     border: 'none',
     cursor: 'pointer',
-    transition: 'background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease',
+    transition: 'background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.1s ease',
   },
   cancelButton: {
     background: 'transparent',
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: '#9CA3AF',
   },
   submitButton: {
     color: 'white',
@@ -150,7 +202,7 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
     {
       element,
       selectedText,
-      placeholder = 'What should change?',
+      placeholder = 'Write your changes?',
       initialValue = '',
       submitLabel = 'Add',
       onSubmit,
@@ -254,14 +306,17 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
       ...style,
     };
 
-    // Compute textarea style
-    const textareaStyle: React.CSSProperties = {
-      ...styles.textarea,
-      ...(isFocused ? { borderColor: accentColor } : {}),
-    };
-
     // Multi-select uses green accent
     const effectiveAccentColor = isMultiSelect ? '#34C759' : accentColor;
+
+    // Compute textarea style with accent-colored focus ring
+    const textareaStyle: React.CSSProperties = {
+      ...styles.textarea,
+      ...(isFocused ? {
+        borderColor: effectiveAccentColor,
+        boxShadow: `0 0 0 2px ${effectiveAccentColor}18`,
+      } : {}),
+    };
 
     return (
       <>
@@ -282,17 +337,21 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}
         >
+          {/* Header with geometric accent shape */}
           <div style={styles.header}>
+            <AccentShape color={effectiveAccentColor} isMultiSelect={isMultiSelect} />
             <span style={styles.element}>{element}</span>
           </div>
 
+          {/* Quoted selected text */}
           {selectedText && (
-            <div style={styles.quote}>
+            <div style={{ ...styles.quote, borderLeftColor: effectiveAccentColor }}>
               &ldquo;{selectedText.slice(0, 80)}
               {selectedText.length > 80 ? '...' : ''}&rdquo;
             </div>
           )}
 
+          {/* Input area */}
           <textarea
             ref={textareaRef}
             style={textareaStyle}
@@ -305,41 +364,56 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
             onKeyDown={handleKeyDown}
           />
 
+          {/* Actions row */}
           <div style={styles.actions}>
-            <button
-              style={{ ...styles.button, ...styles.cancelButton }}
-              onClick={handleCancel}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.8)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'rgba(255, 255, 255, 0.5)';
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              style={{
-                ...styles.button,
-                ...styles.submitButton,
-                backgroundColor: effectiveAccentColor,
-                opacity: text.trim() ? 1 : 0.4,
-              }}
-              onClick={handleSubmit}
-              disabled={!text.trim()}
-              onMouseEnter={(e) => {
-                if (text.trim()) {
-                  e.currentTarget.style.filter = 'brightness(0.9)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.filter = 'none';
-              }}
-            >
-              {submitLabel}
-            </button>
+            <span style={styles.hint}>
+              <kbd style={{
+                fontFamily: 'inherit',
+                fontSize: 10,
+                padding: '1px 4px',
+                background: '#F3F4F6',
+                borderRadius: 3,
+                border: '1px solid #E5E7EB',
+              }}>↵</kbd> to send
+            </span>
+            <div style={styles.buttonGroup}>
+              <button
+                style={{ ...styles.button, ...styles.cancelButton }}
+                onClick={handleCancel}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#F3F4F6';
+                  e.currentTarget.style.color = '#6B7280';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#9CA3AF';
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                style={{
+                  ...styles.button,
+                  ...styles.submitButton,
+                  backgroundColor: effectiveAccentColor,
+                  opacity: text.trim() ? 1 : 0.4,
+                }}
+                onClick={handleSubmit}
+                disabled={!text.trim()}
+                onMouseEnter={(e) => {
+                  if (text.trim()) {
+                    e.currentTarget.style.filter = 'brightness(0.92)';
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.filter = 'none';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                {submitLabel}
+              </button>
+            </div>
           </div>
         </div>
       </>
