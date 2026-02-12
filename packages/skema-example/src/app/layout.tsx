@@ -1,7 +1,7 @@
 import React from "react"
 import type { Metadata } from 'next'
 import './globals.css'
-import { SkemaWrapper } from "@/components/skema-wrapper"
+import { SkemaOverlay } from "@/components/skema-overlay"
 
 export const metadata: Metadata = {
   title: 'Skema',
@@ -50,7 +50,7 @@ export default function RootLayout({
       </head>
       <body className="font-clash antialiased" suppressHydrationWarning>
         {children}
-        <SkemaWrapper />
+        <SkemaOverlay />
       </body>
     </html>
   )

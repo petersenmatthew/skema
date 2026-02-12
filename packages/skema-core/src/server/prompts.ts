@@ -95,7 +95,7 @@ export interface DrawingInput {
  */
 const CRITICAL_RULES = `CRITICAL RULES:
 - Do NOT create new files. Only edit existing files.
-- Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line.
+- Do NOT modify the Skema overlay component import or the SkemaOverlay component itself.
 - Ensure all JSX tags are properly closed - every <tag> needs a matching </tag>.
 - Do NOT run any shell commands. No npm, no git, no lint, no build commands. Just edit files.
 - STOP immediately after making the file changes. Do not verify, do not run tests, do not check status.`;
@@ -319,7 +319,7 @@ const DRAWING_IMPLEMENTATION_GUIDELINES = `- **CRITICAL: DO NOT CREATE ANY NEW F
 const DRAWING_ERROR_PREVENTION_RULES = `1. **NEVER CREATE NEW FILES** - Do NOT create new component files, utility files, or any other files. Write everything inline in the existing file
 2. You do not need to update package.json or anything, just add / edit the react component.
 3. Do NOT add import statements in the middle of the file or inside JSX - imports go ONLY at the top
-4. Do NOT modify the import { SkemaWrapper } from "@/components/skema-wrapper" line or the SkemaWrapper component itself
+4. Do NOT modify the Skema overlay component import or the SkemaOverlay component itself
 5. If you need something that requires an import and it's not already imported, either use an alternative that doesn't need an import, or add the import at the very TOP of the file with the other imports
 6. DONT MAKE ANY CHANGES THAT WOULD RESULT IN A Build Error
 7. **JSX SYNTAX VALIDATION** - ALWAYS ensure every JSX tag is properly closed. Every opening tag like <div>, <a>, <span>, <button> MUST have a matching closing tag </div>, </a>, </span>, </button>. Self-closing tags like <img />, <input />, <br /> must end with />. Before finishing, mentally verify all tag pairs are balanced.`;

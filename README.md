@@ -51,47 +51,38 @@ Run the CLI once to complete its login/auth flow before using with Skema.
 
 #### Next.js App Router (Next.js 13+)
 
-In Next.js App Router, components are Server Components by default. Since Skema uses tldraw (which requires browser APIs), you need to wrap it in a **Client Component**.
-
-**Step 1:** Create a Client Component wrapper:
+In Next.js App Router, components are Server Components by default. Since Skema uses tldraw (which requires browser APIs), you need a small **Client Component** wrapper:
 
 ```tsx
-// src/components/SkemaWrapper.tsx
+// src/components/skema-overlay.tsx
 "use client";
 
-import dynamic from "next/dynamic";
+import { Skema } from "skema-core";
 
-const Skema = dynamic(() => import("skema-core").then((mod) => mod.Skema), {
-  ssr: false,
-});
-
-export default function SkemaWrapper() {
-  if (process.env.NODE_ENV !== "development") {
-    return null;
-  }
+export function SkemaOverlay() {
   return <Skema />;
 }
 ```
 
-**Step 2:** Import the wrapper in your layout or page:
+Then import it in your layout:
 
 ```tsx
 // src/app/layout.tsx
-import SkemaWrapper from "@/components/SkemaWrapper";
+import { SkemaOverlay } from "@/components/skema-overlay";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
         {children}
-        <SkemaWrapper />
+        <SkemaOverlay />
       </body>
     </html>
   );
 }
 ```
 
-> **Why is this needed?** The `ssr: false` option with `next/dynamic` is only allowed in Client Components. Since `layout.tsx` is a Server Component by default, you must create a separate Client Component wrapper.
+That's it. Skema auto-connects to the daemon and handles everything internally. No hooks or callbacks needed for the default flow.
 
 #### Next.js Pages Router / Other React Apps
 
