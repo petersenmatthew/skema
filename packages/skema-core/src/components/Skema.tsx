@@ -658,6 +658,9 @@ export const Skema: React.FC<SkemaProps> = ({
       onProcessingCancel?.();
     }
     setProcessingBoundingBox(null);
+    if (editorRef.current) {
+      editorRef.current.setSelectedShapes([]);
+    }
     setTimeout(() => {
       setPendingAnnotation(null);
       setPendingExiting(false);
