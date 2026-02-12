@@ -1,6 +1,15 @@
 // =============================================================================
 // Skema MCP Server Implementation
 // =============================================================================
+//
+// The MCP server connects to the Skema daemon via WebSocket to read and manage
+// queued annotations. When the user is in MCP mode, annotations are queued in
+// the daemon instead of being processed immediately. The AI agent connected
+// via MCP retrieves them, makes the code changes itself, and marks them resolved.
+//
+// Architecture:
+//   Browser → (WS) → Daemon → [annotation store] ← (WS) ← MCP Server ← Agent
+//
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -12,198 +21,360 @@ import {
   type CallToolRequest,
   type ReadResourceRequest,
 } from '@modelcontextprotocol/sdk/types.js';
-import * as fs from 'fs';
-import * as path from 'path';
-import { getProvider, getAvailableProviders, type ProviderName } from '../server/providers';
-import { analyzeImage as analyzeImageWithVision } from '../server/vision';
-import { buildDrawingToCodePrompt, buildDetailedDomSelectionPrompt } from '../server/prompts';
+import WebSocket from 'ws';
 
 // =============================================================================
-// Types
+// Configuration
 // =============================================================================
 
-interface SkemaGenerateInput {
-  comment: string;
-  annotationType: 'dom_selection' | 'drawing' | 'gesture';
-  provider?: ProviderName;
-  // DOM selection fields
-  selector?: string;
-  tagName?: string;
-  text?: string;
-  elementPath?: string;
-  // Drawing fields
-  drawingImage?: string;
-  drawingSvg?: string;
-  boundingBox?: { x: number; y: number; width: number; height: number };
+const DAEMON_PORT = parseInt(process.env.SKEMA_PORT || '54321', 10);
+const DAEMON_URL = `ws://localhost:${DAEMON_PORT}`;
+
+// =============================================================================
+// Daemon WebSocket Client
+// =============================================================================
+
+let daemonWs: WebSocket | null = null;
+let daemonConnected = false;
+let messageIdCounter = 0;
+const pendingRequests = new Map<string, {
+  resolve: (data: any) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}>();
+
+function connectToDaemon(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (daemonWs && daemonConnected) {
+      resolve();
+      return;
+    }
+
+    daemonWs = new WebSocket(DAEMON_URL);
+
+    daemonWs.on('open', () => {
+      daemonConnected = true;
+      console.error('[Skema MCP] Connected to daemon at', DAEMON_URL);
+      resolve();
+    });
+
+    daemonWs.on('message', (data) => {
+      try {
+        const msg = JSON.parse(data.toString());
+        
+        // Handle responses to our requests
+        if (msg.id && pendingRequests.has(msg.id)) {
+          const pending = pendingRequests.get(msg.id)!;
+          pendingRequests.delete(msg.id);
+          clearTimeout(pending.timeout);
+          
+          if (msg.type === 'error') {
+            pending.reject(new Error(msg.error));
+          } else {
+            pending.resolve(msg);
+          }
+        }
+      } catch (e) {
+        console.error('[Skema MCP] Failed to parse daemon message:', e);
+      }
+    });
+
+    daemonWs.on('close', () => {
+      daemonConnected = false;
+      daemonWs = null;
+      console.error('[Skema MCP] Disconnected from daemon');
+    });
+
+    daemonWs.on('error', (err) => {
+      daemonConnected = false;
+      console.error('[Skema MCP] Daemon connection error:', err.message);
+      reject(err);
+    });
+  });
 }
 
-interface FileOperationInput {
-  path: string;
-  content?: string;
+function sendToDaemon(type: string, payload: Record<string, any> = {}): Promise<any> {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (!daemonConnected) {
+        await connectToDaemon();
+      }
+
+      if (!daemonWs || !daemonConnected) {
+        reject(new Error('Not connected to Skema daemon. Is it running?'));
+        return;
+      }
+
+      const id = `mcp-${++messageIdCounter}`;
+      const timeout = setTimeout(() => {
+        pendingRequests.delete(id);
+        reject(new Error(`Daemon request timed out: ${type}`));
+      }, 30000);
+
+      pendingRequests.set(id, { resolve, reject, timeout });
+
+      daemonWs.send(JSON.stringify({ id, type, ...payload }));
+    } catch (err) {
+      reject(err);
+    }
+  });
 }
 
 // =============================================================================
-// Server State
+// Tool Definitions
 // =============================================================================
 
-let currentProvider: ProviderName = 'gemini';
-let workingDirectory: string = process.cwd();
+const TOOLS = [
+  {
+    name: 'skema_get_pending',
+    description:
+      'Get all pending annotations from the Skema browser overlay. These are visual annotations ' +
+      '(DOM selections, drawings, multi-selects) that the user has made on their web page and wants ' +
+      'you to implement as code changes. Each annotation includes the user\'s comment describing what ' +
+      'they want, plus element selectors, CSS paths, bounding boxes, and other context to help you ' +
+      'find the right code to modify.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'skema_get_all_annotations',
+    description:
+      'Get all annotations (pending, acknowledged, resolved, dismissed). Useful for reviewing ' +
+      'the full history of annotation requests and their current status.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'skema_get_annotation',
+    description: 'Get details of a specific annotation by ID.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        annotationId: {
+          type: 'string',
+          description: 'The annotation ID to look up',
+        },
+      },
+      required: ['annotationId'],
+    },
+  },
+  {
+    name: 'skema_acknowledge',
+    description:
+      'Mark an annotation as acknowledged. Use this to tell the user you\'ve seen their ' +
+      'annotation and are working on it. The browser overlay will update to show the status change.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        annotationId: {
+          type: 'string',
+          description: 'The annotation ID to acknowledge',
+        },
+      },
+      required: ['annotationId'],
+    },
+  },
+  {
+    name: 'skema_resolve',
+    description:
+      'Mark an annotation as resolved after you\'ve implemented the requested change. ' +
+      'Include a summary of what you did so the user can see it in the browser overlay.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        annotationId: {
+          type: 'string',
+          description: 'The annotation ID to resolve',
+        },
+        summary: {
+          type: 'string',
+          description: 'Summary of what was done to resolve this annotation',
+        },
+      },
+      required: ['annotationId'],
+    },
+  },
+  {
+    name: 'skema_dismiss',
+    description:
+      'Dismiss an annotation if you decide not to implement it. Include a reason so the user ' +
+      'understands why.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        annotationId: {
+          type: 'string',
+          description: 'The annotation ID to dismiss',
+        },
+        reason: {
+          type: 'string',
+          description: 'Reason for dismissing this annotation',
+        },
+      },
+      required: ['annotationId', 'reason'],
+    },
+  },
+  {
+    name: 'skema_watch',
+    description:
+      'Wait for new annotations to appear. This blocks until the user creates new annotations ' +
+      'in the browser overlay, then returns them as a batch. Use this in a loop for hands-free ' +
+      'processing: call skema_watch, process the returned annotations, resolve them, then call ' +
+      'skema_watch again.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        timeoutSeconds: {
+          type: 'number',
+          description: 'Max seconds to wait for annotations (default: 120, max: 300)',
+        },
+      },
+      required: [],
+    },
+  },
+];
 
 // =============================================================================
 // Tool Handlers
 // =============================================================================
 
-async function handleGenerate(input: SkemaGenerateInput): Promise<string> {
-  const providerName = input.provider || currentProvider;
-  const provider = getProvider(providerName);
-  
-  if (!provider) {
-    return `Error: Provider ${providerName} is not available. Check API key configuration.`;
-  }
+type ToolResult = {
+  content: Array<{ type: 'text'; text: string }>;
+  isError?: boolean;
+};
 
-  // Build prompt based on annotation type
-  let prompt: string;
-  
-  if (input.annotationType === 'drawing') {
-    // If there's an image, analyze it first
-    let visionDescription: string | undefined;
-    if (input.drawingImage) {
+function success(data: unknown): ToolResult {
+  return {
+    content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+  };
+}
+
+function error(message: string): ToolResult {
+  return {
+    content: [{ type: 'text', text: message }],
+    isError: true,
+  };
+}
+
+async function handleTool(name: string, args: any): Promise<ToolResult> {
+  switch (name) {
+    case 'skema_get_pending': {
       try {
-        visionDescription = await provider.analyzeImage(
-          input.drawingImage,
-          'Analyze this UI wireframe sketch for a front-end developer. Describe the layout and elements.'
-        );
-      } catch (error) {
-        console.error('[Skema MCP] Vision analysis failed:', error);
+        const response = await sendToDaemon('get-pending-annotations');
+        return success({
+          count: response.count,
+          annotations: response.annotations,
+        });
+      } catch (err) {
+        return error(`Failed to get pending annotations: ${(err as Error).message}`);
       }
     }
 
-    prompt = buildDrawingToCodePrompt({
-      comment: input.comment,
-      boundingBox: input.boundingBox,
-      drawingSvg: input.drawingSvg,
-      drawingImage: input.drawingImage,
-      visionDescription,
-    });
-  } else {
-    // DOM selection or gesture
-    prompt = buildDetailedDomSelectionPrompt({
-      comment: input.comment,
-      selector: input.selector,
-      tagName: input.tagName,
-      text: input.text,
-      elementPath: input.elementPath,
-    });
-  }
-
-  // Stream generation and collect results
-  let result = '';
-  try {
-    for await (const event of provider.generateStream(prompt)) {
-      if (event.type === 'text' && event.content) {
-        result += event.content;
-      } else if (event.type === 'error') {
-        return `Error during generation: ${event.content}`;
+    case 'skema_get_all_annotations': {
+      try {
+        const response = await sendToDaemon('get-all-annotations');
+        return success({
+          count: response.count,
+          annotations: response.annotations,
+        });
+      } catch (err) {
+        return error(`Failed to get annotations: ${(err as Error).message}`);
       }
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Generation failed: ${message}`;
-  }
 
-  return result || 'Generation completed but no output was produced.';
-}
-
-async function handleAnalyzeImage(input: { image: string; prompt?: string }): Promise<string> {
-  const provider = getProvider(currentProvider);
-  
-  if (!provider) {
-    return `Error: Provider ${currentProvider} is not available for vision analysis.`;
-  }
-
-  try {
-    const description = await provider.analyzeImage(
-      input.image,
-      input.prompt || 'Analyze this image and describe what you see.'
-    );
-    return description;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Vision analysis failed: ${message}`;
-  }
-}
-
-async function handleReadFile(input: FileOperationInput): Promise<string> {
-  try {
-    const filePath = path.isAbsolute(input.path) 
-      ? input.path 
-      : path.join(workingDirectory, input.path);
-    
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return content;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Error reading file: ${message}`;
-  }
-}
-
-async function handleWriteFile(input: FileOperationInput): Promise<string> {
-  if (!input.content) {
-    return 'Error: No content provided for write operation.';
-  }
-
-  try {
-    const filePath = path.isAbsolute(input.path) 
-      ? input.path 
-      : path.join(workingDirectory, input.path);
-    
-    // Ensure directory exists
-    const dir = path.dirname(filePath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    case 'skema_get_annotation': {
+      try {
+        const response = await sendToDaemon('get-annotation', {
+          annotationId: args.annotationId,
+        });
+        return success(response.annotation);
+      } catch (err) {
+        return error(`Failed to get annotation: ${(err as Error).message}`);
+      }
     }
 
-    fs.writeFileSync(filePath, input.content, 'utf-8');
-    return `Successfully wrote to ${filePath}`;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Error writing file: ${message}`;
+    case 'skema_acknowledge': {
+      try {
+        await sendToDaemon('acknowledge-annotation', {
+          annotationId: args.annotationId,
+        });
+        return success({ acknowledged: true, annotationId: args.annotationId });
+      } catch (err) {
+        return error(`Failed to acknowledge: ${(err as Error).message}`);
+      }
+    }
+
+    case 'skema_resolve': {
+      try {
+        await sendToDaemon('resolve-annotation', {
+          annotationId: args.annotationId,
+          summary: args.summary,
+        });
+        return success({
+          resolved: true,
+          annotationId: args.annotationId,
+          summary: args.summary,
+        });
+      } catch (err) {
+        return error(`Failed to resolve: ${(err as Error).message}`);
+      }
+    }
+
+    case 'skema_dismiss': {
+      try {
+        await sendToDaemon('dismiss-annotation', {
+          annotationId: args.annotationId,
+          reason: args.reason,
+        });
+        return success({
+          dismissed: true,
+          annotationId: args.annotationId,
+          reason: args.reason,
+        });
+      } catch (err) {
+        return error(`Failed to dismiss: ${(err as Error).message}`);
+      }
+    }
+
+    case 'skema_watch': {
+      const timeoutSeconds = Math.min(300, Math.max(1, args?.timeoutSeconds ?? 120));
+      const pollInterval = 2000; // 2 seconds
+      const maxPolls = Math.ceil((timeoutSeconds * 1000) / pollInterval);
+
+      // Poll for pending annotations until some appear or timeout
+      for (let i = 0; i < maxPolls; i++) {
+        try {
+          const response = await sendToDaemon('get-pending-annotations');
+          if (response.count > 0) {
+            return success({
+              timeout: false,
+              count: response.count,
+              annotations: response.annotations,
+            });
+          }
+        } catch (err) {
+          return error(`Lost connection to daemon: ${(err as Error).message}`);
+        }
+
+        // Wait before next poll
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+
+      return success({
+        timeout: true,
+        message: `No new annotations within ${timeoutSeconds} seconds`,
+      });
+    }
+
+    default:
+      return error(`Unknown tool: ${name}`);
   }
-}
-
-async function handleListFiles(input: { directory?: string }): Promise<string> {
-  try {
-    const dir = input.directory 
-      ? (path.isAbsolute(input.directory) ? input.directory : path.join(workingDirectory, input.directory))
-      : workingDirectory;
-    
-    const files = fs.readdirSync(dir, { withFileTypes: true });
-    const fileList = files.map(f => `${f.isDirectory() ? '[dir] ' : ''}${f.name}`);
-    return fileList.join('\n');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return `Error listing files: ${message}`;
-  }
-}
-
-async function handleSetProvider(input: { provider: ProviderName }): Promise<string> {
-  const availableProviders = getAvailableProviders();
-  
-  if (!availableProviders.includes(input.provider)) {
-    return `Provider ${input.provider} is not available. Available providers: ${availableProviders.join(', ')}`;
-  }
-
-  currentProvider = input.provider;
-  return `Provider set to ${input.provider}`;
-}
-
-async function handleGetStatus(): Promise<string> {
-  const availableProviders = getAvailableProviders();
-  return JSON.stringify({
-    currentProvider,
-    availableProviders,
-    workingDirectory,
-  }, null, 2);
 }
 
 // =============================================================================
@@ -211,10 +382,17 @@ async function handleGetStatus(): Promise<string> {
 // =============================================================================
 
 export async function startMcpServer(): Promise<void> {
+  // Try to connect to daemon on startup
+  try {
+    await connectToDaemon();
+  } catch {
+    console.error('[Skema MCP] Warning: Could not connect to daemon. Will retry on first tool call.');
+  }
+
   const server = new Server(
     {
       name: 'skema',
-      version: '0.2.0',
+      version: '0.3.0',
     },
     {
       capabilities: {
@@ -229,114 +407,7 @@ export async function startMcpServer(): Promise<void> {
   // ==========================================================================
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-      tools: [
-        {
-          name: 'skema_generate',
-          description: 'Generate code changes based on an annotation (DOM selection, drawing, or gesture)',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              comment: { type: 'string', description: 'User comment describing the change' },
-              annotationType: { 
-                type: 'string', 
-                enum: ['dom_selection', 'drawing', 'gesture'],
-                description: 'Type of annotation'
-              },
-              provider: { 
-                type: 'string', 
-                enum: ['gemini', 'claude', 'openai'],
-                description: 'AI provider to use (optional, defaults to current provider)'
-              },
-              selector: { type: 'string', description: 'CSS selector for DOM selection' },
-              tagName: { type: 'string', description: 'HTML tag name' },
-              text: { type: 'string', description: 'Text content of element' },
-              elementPath: { type: 'string', description: 'DOM path to element' },
-              drawingImage: { type: 'string', description: 'Base64 PNG of drawing' },
-              drawingSvg: { type: 'string', description: 'SVG representation of drawing' },
-              boundingBox: {
-                type: 'object',
-                properties: {
-                  x: { type: 'number' },
-                  y: { type: 'number' },
-                  width: { type: 'number' },
-                  height: { type: 'number' },
-                },
-              },
-            },
-            required: ['comment', 'annotationType'],
-          },
-        },
-        {
-          name: 'skema_analyze_image',
-          description: 'Analyze an image using vision AI',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              image: { type: 'string', description: 'Base64 encoded image' },
-              prompt: { type: 'string', description: 'Analysis prompt (optional)' },
-            },
-            required: ['image'],
-          },
-        },
-        {
-          name: 'skema_read_file',
-          description: 'Read contents of a file',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              path: { type: 'string', description: 'File path (absolute or relative to working directory)' },
-            },
-            required: ['path'],
-          },
-        },
-        {
-          name: 'skema_write_file',
-          description: 'Write content to a file',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              path: { type: 'string', description: 'File path (absolute or relative to working directory)' },
-              content: { type: 'string', description: 'Content to write' },
-            },
-            required: ['path', 'content'],
-          },
-        },
-        {
-          name: 'skema_list_files',
-          description: 'List files in a directory',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              directory: { type: 'string', description: 'Directory path (optional, defaults to working directory)' },
-            },
-          },
-        },
-        {
-          name: 'skema_set_provider',
-          description: 'Set the AI provider to use',
-          inputSchema: {
-            type: 'object',
-            properties: {
-              provider: { 
-                type: 'string', 
-                enum: ['gemini', 'claude', 'openai'],
-                description: 'Provider name'
-              },
-            },
-            required: ['provider'],
-          },
-        },
-        {
-          name: 'skema_status',
-          description: 'Get current Skema status including provider and available providers',
-          inputSchema: {
-            type: 'object',
-            properties: {},
-          },
-        },
-      ],
-    };
+    return { tools: TOOLS };
   });
 
   // ==========================================================================
@@ -347,43 +418,10 @@ export async function startMcpServer(): Promise<void> {
     const { name, arguments: args } = request.params;
 
     try {
-      let result: string;
-
-      switch (name) {
-        case 'skema_generate':
-          result = await handleGenerate(args as SkemaGenerateInput);
-          break;
-        case 'skema_analyze_image':
-          result = await handleAnalyzeImage(args as { image: string; prompt?: string });
-          break;
-        case 'skema_read_file':
-          result = await handleReadFile(args as FileOperationInput);
-          break;
-        case 'skema_write_file':
-          result = await handleWriteFile(args as FileOperationInput);
-          break;
-        case 'skema_list_files':
-          result = await handleListFiles(args as { directory?: string });
-          break;
-        case 'skema_set_provider':
-          result = await handleSetProvider(args as { provider: ProviderName });
-          break;
-        case 'skema_status':
-          result = await handleGetStatus();
-          break;
-        default:
-          result = `Unknown tool: ${name}`;
-      }
-
-      return {
-        content: [{ type: 'text', text: result }],
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        content: [{ type: 'text', text: `Error: ${message}` }],
-        isError: true,
-      };
+      return await handleTool(name, args);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return error(message);
     }
   });
 
@@ -397,13 +435,7 @@ export async function startMcpServer(): Promise<void> {
         {
           uri: 'skema://status',
           name: 'Skema Status',
-          description: 'Current Skema configuration and status',
-          mimeType: 'application/json',
-        },
-        {
-          uri: 'skema://providers',
-          name: 'Available Providers',
-          description: 'List of available AI providers',
+          description: 'Current Skema daemon connection status and pending annotation count',
           mimeType: 'application/json',
         },
       ],
@@ -414,29 +446,29 @@ export async function startMcpServer(): Promise<void> {
     const { uri } = request.params;
 
     switch (uri) {
-      case 'skema://status':
+      case 'skema://status': {
+        let pendingCount = 0;
+        let connected = false;
+        try {
+          const response = await sendToDaemon('get-pending-annotations');
+          pendingCount = response.count;
+          connected = true;
+        } catch {
+          connected = false;
+        }
+
         return {
           contents: [{
             uri,
             mimeType: 'application/json',
             text: JSON.stringify({
-              currentProvider,
-              availableProviders: getAvailableProviders(),
-              workingDirectory,
+              daemonConnected: connected,
+              daemonUrl: DAEMON_URL,
+              pendingAnnotations: pendingCount,
             }, null, 2),
           }],
         };
-      case 'skema://providers':
-        return {
-          contents: [{
-            uri,
-            mimeType: 'application/json',
-            text: JSON.stringify({
-              available: getAvailableProviders(),
-              current: currentProvider,
-            }, null, 2),
-          }],
-        };
+      }
       default:
         throw new Error(`Unknown resource: ${uri}`);
     }
@@ -450,6 +482,6 @@ export async function startMcpServer(): Promise<void> {
   await server.connect(transport);
 
   console.error('[Skema MCP] Server started');
-  console.error('[Skema MCP] Working directory:', workingDirectory);
-  console.error('[Skema MCP] Available providers:', getAvailableProviders().join(', ') || 'none');
+  console.error('[Skema MCP] Daemon URL:', DAEMON_URL);
+  console.error('[Skema MCP] Tools: skema_get_pending, skema_acknowledge, skema_resolve, skema_dismiss, skema_watch');
 }

@@ -3,11 +3,11 @@ import { execSync, exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  type AIProvider,
+  type AIProvider as CLIProvider,
   type AIProviderConfig,
   spawnAICLI,
   isProviderAvailable,
-  getAvailableProviders,
+  getAvailableProviders as getCLIProviders,
 } from './ai-provider';
 import { buildPromptFromAnnotation, type ProjectContext } from './gemini-cli';
 import { analyzeImage, isVisionAvailable } from './vision';
@@ -18,6 +18,20 @@ import {
   type ExecutionMode,
 } from './providers';
 import type { Annotation } from '../types';
+import {
+  queueAnnotation,
+  getPendingAnnotations,
+  getAllAnnotations,
+  getAnnotation as getStoredAnnotation,
+  acknowledgeAnnotation,
+  resolveAnnotation,
+  dismissAnnotation,
+  removeAnnotation,
+  clearAnnotations,
+  getPendingCount,
+  onStoreEvent,
+  type StoredAnnotation,
+} from './annotation-store';
 
 // =============================================================================
 // Types
@@ -29,7 +43,7 @@ export interface DaemonConfig {
   /** Working directory for file operations and AI commands */
   cwd?: string;
   /** Default AI provider */
-  defaultProvider?: AIProvider;
+  defaultProvider?: ProviderName;
   /** Default execution mode */
   defaultMode?: ExecutionMode;
 }
@@ -52,11 +66,11 @@ export interface OutgoingMessage {
 // Daemon State
 // =============================================================================
 
-let currentProvider: AIProvider = 'gemini';
+let currentProvider: ProviderName = 'gemini';
 let workingDirectory: string = process.cwd();
-let currentMode: ExecutionMode = 'legacy-cli'; // Default to legacy for backwards compatibility
+let currentMode: ExecutionMode = 'direct-cli';
 
-// API keys stored per-session (from browser UI in direct-api mode)
+// API keys stored per-session (from browser UI)
 let sessionApiKeys: Record<ProviderName, string | undefined> = {
   gemini: undefined,
   claude: undefined,
@@ -149,7 +163,7 @@ const handlers: Record<string, MessageHandler> = {
       id: msg.id,
       type: 'provider',
       provider: currentProvider,
-      available: getAvailableProviders(),
+      available: getDirectProviders(),
     };
   },
 
@@ -159,17 +173,17 @@ const handlers: Record<string, MessageHandler> = {
       return { id: msg.id, type: 'error', error: `Invalid provider: ${newProvider}` };
     }
     
-    // OpenAI only supported in direct-api mode
-    if (newProvider === 'openai' && currentMode === 'legacy-cli') {
+    // OpenAI only supported in direct-api/mcp mode (no CLI tool for OpenAI)
+    if (newProvider === 'openai' && currentMode === 'direct-cli') {
       return {
         id: msg.id,
         type: 'error',
-        error: `OpenAI is only supported in direct-api mode. Switch mode first with set-mode.`,
+        error: `OpenAI is not available in CLI mode (no CLI tool). Switch to API or MCP mode.`,
       };
     }
     
-    // Check CLI availability in legacy mode
-    if (currentMode === 'legacy-cli' && !isProviderAvailable(newProvider as AIProvider)) {
+    // Check CLI availability in CLI mode
+    if (currentMode === 'direct-cli' && !isProviderAvailable(newProvider as CLIProvider)) {
       return {
         id: msg.id,
         type: 'error',
@@ -177,7 +191,7 @@ const handlers: Record<string, MessageHandler> = {
       };
     }
     
-    currentProvider = newProvider as AIProvider;
+    currentProvider = newProvider;
     console.log(`[Daemon] Switched to provider: ${currentProvider}`);
     return { id: msg.id, type: 'provider-changed', provider: currentProvider };
   },
@@ -190,13 +204,13 @@ const handlers: Record<string, MessageHandler> = {
       id: msg.id,
       type: 'mode',
       mode: currentMode,
-      availableModes: ['mcp', 'direct-api', 'legacy-cli'] as ExecutionMode[],
+      availableModes: ['direct-cli', 'direct-api', 'mcp'] as ExecutionMode[],
     };
   },
 
   'set-mode': async (msg) => {
     const newMode = msg.mode as ExecutionMode;
-    if (!['mcp', 'direct-api', 'legacy-cli'].includes(newMode)) {
+    if (!['direct-cli', 'direct-api', 'mcp'].includes(newMode)) {
       return { id: msg.id, type: 'error', error: `Invalid mode: ${newMode}` };
     }
     currentMode = newMode;
@@ -205,7 +219,7 @@ const handlers: Record<string, MessageHandler> = {
   },
 
   // -------------------------------------------------------------------------
-  // API Key Management (for direct-api mode)
+  // API Key Management
   // -------------------------------------------------------------------------
   'set-api-key': async (msg) => {
     const provider = msg.provider as ProviderName;
@@ -232,7 +246,7 @@ const handlers: Record<string, MessageHandler> = {
   },
 
   // -------------------------------------------------------------------------
-  // AI Generation (streaming) - supports all three modes
+  // AI Generation (streaming)
   // -------------------------------------------------------------------------
   generate: async (msg, ws) => {
     const annotation = msg.annotation as Partial<Annotation> & { comment?: string };
@@ -242,8 +256,22 @@ const handlers: Record<string, MessageHandler> = {
     // Allow per-request mode and API key override
     const requestMode = (msg.mode as ExecutionMode) || currentMode;
     const requestApiKey = msg.apiKey as string | undefined;
-    // Provider can be AIProvider (CLI) or ProviderName (includes openai for direct API)
-    const requestProvider = (msg.provider as AIProvider | ProviderName) || currentProvider;
+    const requestProvider = (msg.provider as ProviderName) || currentProvider;
+
+    // MCP mode: queue annotation instead of processing immediately
+    if (requestMode === 'mcp') {
+      const comment = annotation.comment || '';
+      const stored = queueAnnotation(annotation as Annotation, comment);
+      
+      sendMessage(ws, {
+        id: msg.id,
+        type: 'annotation-queued',
+        success: true,
+        annotationId: stored.annotation.id,
+        pendingCount: getPendingCount(),
+      });
+      return;
+    }
 
     // Create snapshot for undo
     createSnapshot(annotationId);
@@ -264,10 +292,10 @@ const handlers: Record<string, MessageHandler> = {
         },
       });
 
-      // Use direct API for vision in direct-api or mcp modes
-      if (requestMode === 'direct-api' || requestMode === 'mcp') {
-        const apiKey = requestApiKey || sessionApiKeys[requestProvider as ProviderName] || process.env[getEnvKeyName(requestProvider as ProviderName)];
-        const directProvider = getDirectProvider(requestProvider as ProviderName, apiKey);
+      // Use direct API for vision in direct-api mode
+      if (requestMode === 'direct-api') {
+        const apiKey = requestApiKey || sessionApiKeys[requestProvider] || process.env[getEnvKeyName(requestProvider)];
+        const directProvider = getDirectProvider(requestProvider, apiKey);
         
         if (directProvider) {
           try {
@@ -310,7 +338,7 @@ const handlers: Record<string, MessageHandler> = {
           });
         }
       } else {
-        // Legacy CLI mode - use Gemini vision if available
+        // CLI mode - use Gemini vision if available
         if (isVisionAvailable('gemini')) {
           const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
             provider: 'gemini',
@@ -374,10 +402,10 @@ const handlers: Record<string, MessageHandler> = {
     });
 
     // Route based on execution mode
-    if (requestMode === 'direct-api' || requestMode === 'mcp') {
+    if (requestMode === 'direct-api') {
       // Direct API mode - use SDK providers
-      const apiKey = requestApiKey || sessionApiKeys[requestProvider as ProviderName] || process.env[getEnvKeyName(requestProvider as ProviderName)];
-      const directProvider = getDirectProvider(requestProvider as ProviderName, apiKey);
+      const apiKey = requestApiKey || sessionApiKeys[requestProvider] || process.env[getEnvKeyName(requestProvider)];
+      const directProvider = getDirectProvider(requestProvider, apiKey);
       
       if (!directProvider) {
         sendMessage(ws, {
@@ -385,7 +413,7 @@ const handlers: Record<string, MessageHandler> = {
           type: 'ai-event',
           event: {
             type: 'error',
-            content: `Provider ${requestProvider} is not available. Provide an API key or switch to legacy-cli mode.`,
+            content: `Provider ${requestProvider} is not available. Set an API key in settings or via environment variable.`,
             timestamp: new Date().toISOString(),
             provider: requestProvider,
           },
@@ -427,14 +455,14 @@ const handlers: Record<string, MessageHandler> = {
         });
       }
     } else {
-      // Legacy CLI mode - spawn CLI tools (only gemini and claude supported)
+      // CLI mode - spawn CLI tools (only gemini and claude have CLIs)
       if (requestProvider === 'openai') {
         sendMessage(ws, {
           id: msg.id,
           type: 'ai-event',
           event: {
             type: 'error',
-            content: `OpenAI is only supported in direct-api mode. Switch mode with set-mode.`,
+            content: `OpenAI has no CLI tool. Switch to API or MCP mode to use OpenAI.`,
             timestamp: new Date().toISOString(),
             provider: requestProvider,
           },
@@ -442,14 +470,14 @@ const handlers: Record<string, MessageHandler> = {
         return;
       }
 
-      const cliProvider = requestProvider as AIProvider;
+      const cliProvider = requestProvider as CLIProvider;
       if (!isProviderAvailable(cliProvider)) {
         sendMessage(ws, {
           id: msg.id,
           type: 'ai-event',
           event: {
             type: 'error',
-            content: `Provider ${requestProvider} CLI is not installed. Install it or switch to direct-api mode.`,
+            content: `${requestProvider} CLI is not installed. Run: npm install -g @google/gemini-cli (or switch to API mode).`,
             timestamp: new Date().toISOString(),
             provider: requestProvider,
           },
@@ -499,6 +527,113 @@ const handlers: Record<string, MessageHandler> = {
     }
     const result = revertSnapshot(annotationId);
     return { id: msg.id, type: 'revert-result', ...result };
+  },
+
+  // -------------------------------------------------------------------------
+  // MCP Annotation Queue Management
+  // -------------------------------------------------------------------------
+  'get-pending-annotations': async (msg) => {
+    const pending = getPendingAnnotations();
+    return {
+      id: msg.id,
+      type: 'pending-annotations',
+      count: pending.length,
+      annotations: pending.map(serializeStoredAnnotation),
+    };
+  },
+
+  'get-all-annotations': async (msg) => {
+    const all = getAllAnnotations();
+    return {
+      id: msg.id,
+      type: 'all-annotations',
+      count: all.length,
+      annotations: all.map(serializeStoredAnnotation),
+    };
+  },
+
+  'get-annotation': async (msg) => {
+    const id = msg.annotationId as string;
+    const stored = getStoredAnnotation(id);
+    if (!stored) {
+      return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
+    }
+    return {
+      id: msg.id,
+      type: 'annotation',
+      annotation: serializeStoredAnnotation(stored),
+    };
+  },
+
+  'acknowledge-annotation': async (msg) => {
+    const id = msg.annotationId as string;
+    const stored = acknowledgeAnnotation(id);
+    if (!stored) {
+      return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
+    }
+    // Notify browser clients
+    broadcastToClients({
+      type: 'annotation-status-changed',
+      annotationId: id,
+      status: 'acknowledged',
+    });
+    return {
+      id: msg.id,
+      type: 'annotation-acknowledged',
+      annotationId: id,
+    };
+  },
+
+  'resolve-annotation': async (msg) => {
+    const id = msg.annotationId as string;
+    const summary = msg.summary as string | undefined;
+    const stored = resolveAnnotation(id, summary);
+    if (!stored) {
+      return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
+    }
+    // Notify browser clients
+    broadcastToClients({
+      type: 'annotation-status-changed',
+      annotationId: id,
+      status: 'resolved',
+      summary,
+    });
+    return {
+      id: msg.id,
+      type: 'annotation-resolved',
+      annotationId: id,
+      summary,
+    };
+  },
+
+  'dismiss-annotation': async (msg) => {
+    const id = msg.annotationId as string;
+    const reason = msg.reason as string;
+    const stored = dismissAnnotation(id, reason);
+    if (!stored) {
+      return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
+    }
+    // Notify browser clients
+    broadcastToClients({
+      type: 'annotation-status-changed',
+      annotationId: id,
+      status: 'dismissed',
+      reason,
+    });
+    return {
+      id: msg.id,
+      type: 'annotation-dismissed',
+      annotationId: id,
+      reason,
+    };
+  },
+
+  'clear-queued-annotations': async (msg) => {
+    clearAnnotations();
+    return {
+      id: msg.id,
+      type: 'annotations-cleared',
+    };
   },
 
   // -------------------------------------------------------------------------
@@ -582,19 +717,15 @@ const handlers: Record<string, MessageHandler> = {
   // Status
   // -------------------------------------------------------------------------
   ping: async (msg) => {
-    // Get providers available in each mode
-    const cliProviders = getAvailableProviders();
-    const directProviders = getDirectProviders();
-    
     return {
       id: msg.id,
       type: 'pong',
       provider: currentProvider,
       mode: currentMode,
       cwd: workingDirectory,
-      availableProviders: cliProviders,
-      availableDirectProviders: directProviders,
-      availableModes: ['mcp', 'direct-api', 'legacy-cli'] as ExecutionMode[],
+      availableProviders: getDirectProviders(),
+      availableCLIProviders: getCLIProviders(),
+      availableModes: ['direct-cli', 'direct-api', 'mcp'] as ExecutionMode[],
     };
   },
 };
@@ -602,6 +733,46 @@ const handlers: Record<string, MessageHandler> = {
 // =============================================================================
 // WebSocket Helpers
 // =============================================================================
+
+// Track connected browser clients for broadcasting
+const connectedClients = new Set<WebSocket>();
+
+function broadcastToClients(message: OutgoingMessage) {
+  for (const client of connectedClients) {
+    sendMessage(client, message);
+  }
+}
+
+function serializeStoredAnnotation(stored: StoredAnnotation) {
+  return {
+    id: stored.annotation.id,
+    type: stored.annotation.type,
+    comment: stored.comment,
+    status: stored.status,
+    createdAt: stored.createdAt,
+    updatedAt: stored.updatedAt,
+    resolvedBy: stored.resolvedBy,
+    resolutionSummary: stored.resolutionSummary,
+    dismissalReason: stored.dismissalReason,
+    // Include key annotation data the agent needs
+    annotation: {
+      type: stored.annotation.type,
+      selector: (stored.annotation as any).selector,
+      tagName: (stored.annotation as any).tagName,
+      text: (stored.annotation as any).text,
+      elementPath: (stored.annotation as any).elementPath,
+      boundingBox: stored.annotation.boundingBox,
+      drawingSvg: (stored.annotation as any).drawingSvg,
+      drawingImage: (stored.annotation as any).drawingImage,
+      extractedText: (stored.annotation as any).extractedText,
+      nearbyElements: (stored.annotation as any).nearbyElements,
+      viewport: (stored.annotation as any).viewport,
+      projectStyles: (stored.annotation as any).projectStyles,
+      isMultiSelect: (stored.annotation as any).isMultiSelect,
+      elements: (stored.annotation as any).elements,
+    },
+  };
+}
 
 function sendMessage(ws: WebSocket, message: OutgoingMessage) {
   if (ws.readyState === WebSocket.OPEN) {
@@ -611,6 +782,7 @@ function sendMessage(ws: WebSocket, message: OutgoingMessage) {
 
 function handleConnection(ws: WebSocket) {
   console.log('[Daemon] Client connected');
+  connectedClients.add(ws);
 
   // Send initial state
   sendMessage(ws, {
@@ -618,9 +790,10 @@ function handleConnection(ws: WebSocket) {
     provider: currentProvider,
     mode: currentMode,
     cwd: workingDirectory,
-    availableProviders: getAvailableProviders(),
-    availableDirectProviders: getDirectProviders(),
-    availableModes: ['mcp', 'direct-api', 'legacy-cli'] as ExecutionMode[],
+    availableProviders: getDirectProviders(),
+    availableCLIProviders: getCLIProviders(),
+    availableModes: ['direct-cli', 'direct-api', 'mcp'] as ExecutionMode[],
+    pendingAnnotations: currentMode === 'mcp' ? getPendingCount() : 0,
   });
 
   ws.on('message', async (data) => {
@@ -654,6 +827,7 @@ function handleConnection(ws: WebSocket) {
 
   ws.on('close', () => {
     console.log('[Daemon] Client disconnected');
+    connectedClients.delete(ws);
   });
 
   ws.on('error', (error) => {
@@ -677,23 +851,22 @@ export function startDaemon(config: DaemonConfig = {}): DaemonInstance {
   const port = config.port ?? 9999;
   workingDirectory = config.cwd ?? process.cwd();
   currentProvider = config.defaultProvider ?? 'gemini';
-  currentMode = config.defaultMode ?? 'legacy-cli';
+  currentMode = config.defaultMode ?? 'direct-cli';
 
   // Check provider availability based on mode
-  if (currentMode === 'legacy-cli') {
-    if (!isProviderAvailable(currentProvider)) {
-      const available = getAvailableProviders();
+  if (currentMode === 'direct-cli') {
+    if (!isProviderAvailable(currentProvider as CLIProvider)) {
+      const available = getCLIProviders();
       if (available.length > 0) {
         console.log(`[Daemon] ${currentProvider} CLI not found, falling back to ${available[0]}`);
         currentProvider = available[0];
       } else {
-        console.warn('[Daemon] Warning: No CLI providers found. Switch to direct-api mode or install gemini/claude CLI.');
+        console.warn('[Daemon] Warning: No CLI providers found. Install gemini/claude CLI, or switch to API mode.');
       }
     }
   } else {
-    // Direct API or MCP mode - check env vars
-    const directAvailable = getDirectProviders();
-    if (directAvailable.length === 0) {
+    const availableProviders = getDirectProviders();
+    if (availableProviders.length === 0) {
       console.warn('[Daemon] Warning: No API keys found. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.');
     }
   }
@@ -703,8 +876,8 @@ export function startDaemon(config: DaemonConfig = {}): DaemonInstance {
   wss.on('connection', handleConnection);
 
   wss.on('listening', () => {
-    const directProviders = getDirectProviders();
-    const cliProviders = getAvailableProviders();
+    const apiProviders = getDirectProviders();
+    const cliProviders = getCLIProviders();
     
     console.log('');
     console.log('  ┌─────────────────────────────────────────────────┐');
@@ -714,11 +887,10 @@ export function startDaemon(config: DaemonConfig = {}): DaemonInstance {
     console.log(`  │   Mode: ${currentMode.padEnd(39)}│`);
     console.log(`  │   Provider: ${currentProvider.padEnd(35)}│`);
     console.log(`  │   Directory: ${workingDirectory.slice(-33).padEnd(34)}│`);
-    console.log('  │                                                 │');
-    if (currentMode === 'legacy-cli') {
+    if (currentMode === 'direct-cli') {
       console.log(`  │   CLI Providers: ${(cliProviders.join(', ') || 'none').padEnd(29)}│`);
     } else {
-      console.log(`  │   API Providers: ${(directProviders.join(', ') || 'none').padEnd(29)}│`);
+      console.log(`  │   API Providers: ${(apiProviders.join(', ') || 'none').padEnd(29)}│`);
     }
     console.log('  │                                                 │');
     console.log('  │   Waiting for browser connections...           │');
@@ -754,6 +926,3 @@ export {
   workingDirectory,
   handlers,
 };
-
-// Re-export types
-export type { ExecutionMode, ProviderName } from './providers';

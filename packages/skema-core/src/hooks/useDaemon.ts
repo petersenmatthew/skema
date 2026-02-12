@@ -9,16 +9,15 @@ fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{metho
 // Types
 // =============================================================================
 
-export type AIProvider = 'gemini' | 'claude';
 export type ProviderName = 'gemini' | 'claude' | 'openai';
-export type ExecutionMode = 'mcp' | 'direct-api' | 'legacy-cli';
+export type ExecutionMode = 'direct-cli' | 'direct-api' | 'mcp';
 
 export interface DaemonState {
   connected: boolean;
-  provider: AIProvider;
+  provider: ProviderName;
   mode: ExecutionMode;
-  availableProviders: AIProvider[];
-  availableDirectProviders: ProviderName[];
+  availableProviders: ProviderName[];
+  availableCLIProviders: string[];
   availableModes: ExecutionMode[];
   cwd: string;
 }
@@ -36,7 +35,7 @@ export interface GenerateOptions {
   mode?: ExecutionMode;
   /** Override provider for this request */
   provider?: ProviderName;
-  /** API key to use (for direct-api mode) */
+  /** API key to use */
   apiKey?: string;
 }
 
@@ -66,7 +65,7 @@ export interface UseDaemonReturn {
   setProvider: (provider: ProviderName) => Promise<boolean>;
   /** Switch execution mode */
   setMode: (mode: ExecutionMode) => Promise<boolean>;
-  /** Set API key for direct-api mode (stored per session) */
+  /** Set API key (stored per session) */
   setApiKey: (provider: ProviderName, apiKey: string) => Promise<boolean>;
   /** Clear API key(s) */
   clearApiKey: (provider?: ProviderName) => Promise<boolean>;
@@ -105,10 +104,10 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
   const [state, setState] = useState<DaemonState>({
     connected: false,
     provider: 'gemini',
-    mode: 'legacy-cli',
+    mode: 'direct-cli',
     availableProviders: [],
-    availableDirectProviders: [],
-    availableModes: ['mcp', 'direct-api', 'legacy-cli'],
+    availableCLIProviders: [],
+    availableModes: ['direct-cli', 'direct-api', 'mcp'],
     cwd: '',
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -162,7 +161,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           provider: msg.provider || prev.provider,
           mode: msg.mode || prev.mode,
           availableProviders: msg.availableProviders || prev.availableProviders,
-          availableDirectProviders: msg.availableDirectProviders || prev.availableDirectProviders,
+          availableCLIProviders: msg.availableCLIProviders || prev.availableCLIProviders,
           availableModes: msg.availableModes || prev.availableModes,
           cwd: msg.cwd || prev.cwd,
         }));
@@ -188,6 +187,25 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           pending.resolve({ success: msg.success, annotationId: msg.annotationId });
         }
         setIsGenerating(false);
+        return;
+      }
+
+      // Handle MCP mode: annotation queued (not processed immediately)
+      if (msg.type === 'annotation-queued' && msg.id) {
+        const pending = pendingRequests.current.get(msg.id);
+        if (pending) {
+          pendingRequests.current.delete(msg.id);
+          eventCallbacks.current.delete(msg.id);
+          pending.resolve({ success: true, annotationId: msg.annotationId, queued: true });
+        }
+        setIsGenerating(false);
+        return;
+      }
+
+      // Handle MCP annotation status changes (broadcast from daemon)
+      if (msg.type === 'annotation-status-changed') {
+        // This is a broadcast - no pending request to resolve
+        // Components can listen for this via state updates
         return;
       }
 
@@ -308,7 +326,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     }
   }, [sendRequest]);
 
-  // Set API key for direct-api mode
+  // Set API key
   const setApiKey = useCallback(async (provider: ProviderName, apiKey: string): Promise<boolean> => {
     try {
       const response = await sendRequest<{ type: string }>('set-api-key', { provider, apiKey });

@@ -49,15 +49,15 @@ export {
 } from './daemon';
 
 // =============================================================================
-// AI Provider Abstraction (Gemini/Claude switching)
+// AI CLI Provider Abstraction (Gemini/Claude CLI switching)
 // =============================================================================
 
 export {
   spawnAICLI,
   runAICLI,
   isProviderAvailable,
-  getAvailableProviders,
-  type AIProvider,
+  getAvailableProviders as getCLIProviders,
+  type AIProvider as CLIProvider,
   type AIProviderConfig,
   type AIStreamEvent,
   type AIRunResult,
@@ -75,20 +75,40 @@ export {
 } from './vision';
 
 // =============================================================================
-// Direct API Providers (SDK-based AI generation)
+// AI Providers (SDK-based AI generation)
 // =============================================================================
 
 export {
   getProvider,
-  getAvailableProviders as getDirectProviders,
+  getAvailableProviders,
   registerProvider,
   getApiKeyFromEnv,
   createGeminiProvider,
   createClaudeProvider,
   createOpenAIProvider,
-  type AIProvider as DirectAIProvider,
+  type AIProvider,
   type ExecutionMode,
   type ProviderName,
   type GenerateOptions,
   type ProviderConfig,
 } from './providers';
+
+// =============================================================================
+// Annotation Store (MCP-mode annotation queuing)
+// =============================================================================
+
+export {
+  queueAnnotation,
+  getPendingAnnotations,
+  getAllAnnotations,
+  getAnnotation,
+  acknowledgeAnnotation,
+  resolveAnnotation,
+  dismissAnnotation,
+  removeAnnotation,
+  clearAnnotations,
+  getPendingCount,
+  onStoreEvent,
+  type StoredAnnotation,
+  type AnnotationStatus,
+} from './annotation-store';

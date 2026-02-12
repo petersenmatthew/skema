@@ -8,7 +8,13 @@ import type { AIStreamEvent } from '../ai-provider';
 // Types
 // =============================================================================
 
-export type ExecutionMode = 'mcp' | 'direct-api' | 'legacy-cli';
+/**
+ * Execution modes:
+ * - 'direct-cli': Annotations processed instantly via CLI agents (gemini/claude CLI tools)
+ * - 'direct-api': Annotations processed instantly via API SDKs
+ * - 'mcp': Annotations routed through an AI agent (Cursor, Claude Desktop, etc.)
+ */
+export type ExecutionMode = 'direct-cli' | 'direct-api' | 'mcp';
 export type ProviderName = 'gemini' | 'claude' | 'openai';
 
 export interface GenerateOptions {

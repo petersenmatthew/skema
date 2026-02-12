@@ -22,7 +22,8 @@ export type {
   UseDaemonOptions,
   UseDaemonReturn,
   DaemonState,
-  AIProvider,
+  ExecutionMode,
+  ProviderName,
   AIStreamEvent,
 } from './hooks/useDaemon';
 

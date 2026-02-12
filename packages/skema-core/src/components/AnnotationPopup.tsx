@@ -41,6 +41,8 @@ export interface AnnotationPopupProps {
   isExiting?: boolean;
   /** Whether this is a multi-select annotation */
   isMultiSelect?: boolean;
+  /** Dark mode */
+  isDark?: boolean;
 }
 
 export interface AnnotationPopupHandle {
@@ -211,6 +213,7 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
       accentColor = '#3c82f7',
       isExiting = false,
       isMultiSelect = false,
+      isDark = false,
     },
     ref
   ) {
@@ -295,9 +298,29 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
       [handleSubmit, handleCancel]
     );
 
+    // Dark mode color overrides
+    const popupBg = isDark ? '#1a1a1a' : '#FFFFFF';
+    const popupBorder = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0, 0, 0, 0.06)';
+    const elementColor = isDark ? '#9CA3AF' : '#9CA3AF';
+    const quoteBg = isDark ? '#2a2a2a' : '#F9FAFB';
+    const quoteColor = isDark ? '#a1a1aa' : '#6B7280';
+    const textareaBg = isDark ? '#2a2a2a' : '#F9FAFB';
+    const textareaColor = isDark ? '#f0f0f0' : '#1a1a1a';
+    const textareaBorder = isDark ? '#444444' : '#E5E7EB';
+    const hintColor = isDark ? '#666666' : '#C0C5CE';
+    const kbdBg = isDark ? '#333333' : '#F3F4F6';
+    const kbdBorder = isDark ? '#555555' : '#E5E7EB';
+    const cancelColor = isDark ? '#888888' : '#9CA3AF';
+    const cancelHoverBg = isDark ? '#333333' : '#F3F4F6';
+    const cancelHoverColor = isDark ? '#cccccc' : '#6B7280';
+
     // Compute popup style based on animation state
     const popupStyle: React.CSSProperties = {
       ...styles.popup,
+      background: popupBg,
+      boxShadow: isDark
+        ? `0 4px 24px rgba(0, 0, 0, 0.4), 0 0 0 1px ${popupBorder}`
+        : `0 4px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px ${popupBorder}`,
       ...(animState === 'enter' || animState === 'entered' ? styles.popupEnter : {}),
       ...(animState === 'exit' ? styles.popupExit : {}),
       ...(isShaking ? {
@@ -312,6 +335,9 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
     // Compute textarea style with accent-colored focus ring
     const textareaStyle: React.CSSProperties = {
       ...styles.textarea,
+      background: textareaBg,
+      color: textareaColor,
+      border: `1px solid ${textareaBorder}`,
       ...(isFocused ? {
         borderColor: effectiveAccentColor,
         boxShadow: `0 0 0 2px ${effectiveAccentColor}18`,
@@ -340,12 +366,12 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
           {/* Header with geometric accent shape */}
           <div style={styles.header}>
             <AccentShape color={effectiveAccentColor} isMultiSelect={isMultiSelect} />
-            <span style={styles.element}>{element}</span>
+            <span style={{ ...styles.element, color: elementColor }}>{element}</span>
           </div>
 
           {/* Quoted selected text */}
           {selectedText && (
-            <div style={{ ...styles.quote, borderLeftColor: effectiveAccentColor }}>
+            <div style={{ ...styles.quote, borderLeftColor: effectiveAccentColor, background: quoteBg, color: quoteColor }}>
               &ldquo;{selectedText.slice(0, 80)}
               {selectedText.length > 80 ? '...' : ''}&rdquo;
             </div>
@@ -366,27 +392,27 @@ export const AnnotationPopup = forwardRef<AnnotationPopupHandle, AnnotationPopup
 
           {/* Actions row */}
           <div style={styles.actions}>
-            <span style={styles.hint}>
+            <span style={{ ...styles.hint, color: hintColor }}>
               <kbd style={{
                 fontFamily: 'inherit',
                 fontSize: 10,
                 padding: '1px 4px',
-                background: '#F3F4F6',
+                background: kbdBg,
                 borderRadius: 3,
-                border: '1px solid #E5E7EB',
+                border: `1px solid ${kbdBorder}`,
               }}>↵</kbd> to send
             </span>
             <div style={styles.buttonGroup}>
               <button
-                style={{ ...styles.button, ...styles.cancelButton }}
+                style={{ ...styles.button, ...styles.cancelButton, color: cancelColor }}
                 onClick={handleCancel}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = '#F3F4F6';
-                  e.currentTarget.style.color = '#6B7280';
+                  e.currentTarget.style.background = cancelHoverBg;
+                  e.currentTarget.style.color = cancelHoverColor;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = '#9CA3AF';
+                  e.currentTarget.style.color = cancelColor;
                 }}
               >
                 Cancel

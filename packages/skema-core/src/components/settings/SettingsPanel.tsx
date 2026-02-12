@@ -21,11 +21,13 @@ export interface SettingsPanelProps {
   onModeChange: (mode: ExecutionMode) => Promise<boolean>;
   onProviderChange: (provider: ProviderName) => Promise<boolean>;
   onApiKeyChange: (provider: ProviderName, apiKey: string) => Promise<boolean>;
+  // Theme (controlled by parent)
+  theme: 'light' | 'dark';
+  onThemeChange: (theme: 'light' | 'dark') => void;
 }
 
 // LocalStorage keys
 const STORAGE_KEYS = {
-  theme: 'skema-theme',
   geminiApiKey: 'skema-gemini-api-key',
   claudeApiKey: 'skema-claude-api-key',
   openaiApiKey: 'skema-openai-api-key',
@@ -42,14 +44,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onModeChange,
   onProviderChange,
   onApiKeyChange,
+  theme,
+  onThemeChange,
 }) => {
-  // Theme state
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem(STORAGE_KEYS.theme) as 'light' | 'dark') || 'light';
-    }
-    return 'light';
-  });
 
   // API key states (loaded from localStorage)
   const [geminiKey, setGeminiKey] = useState('');
@@ -65,13 +62,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
       setOpenaiKey(localStorage.getItem(STORAGE_KEYS.openaiApiKey) || '');
     }
   }, []);
-
-  // Save theme to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEYS.theme, theme);
-    }
-  }, [theme]);
 
   // Handle API key save
   const handleSaveApiKey = async (providerName: ProviderName, key: string) => {
@@ -138,29 +128,71 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
       {/* Settings Content */}
       <div style={{ padding: '16px 20px' }}>
-        {/* Theme Toggle */}
+        {/* Theme Toggle - Sun/Moon icon */}
         <SettingRow label="Theme" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
-          <ToggleSwitch
-            options={['Light', 'Dark']}
-            value={theme === 'dark' ? 1 : 0}
-            onChange={(idx) => setTheme(idx === 1 ? 'dark' : 'light')}
-            isDark={isDark}
-          />
+          <ThemeIconToggle isDark={isDark} onToggle={() => onThemeChange(isDark ? 'light' : 'dark')} />
         </SettingRow>
 
-        {/* Mode Toggle */}
+        {/* Mode Toggle: Direct vs MCP */}
         <SettingRow label="Mode" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
           <ToggleSwitch
-            options={['CLI', 'API']}
-            value={mode === 'direct-api' ? 1 : 0}
-            onChange={(idx) => onModeChange(idx === 1 ? 'direct-api' : 'legacy-cli')}
+            options={['Direct', 'MCP']}
+            value={mode === 'mcp' ? 1 : 0}
+            onChange={(idx) => onModeChange(idx === 1 ? 'mcp' : 'direct-cli')}
             isDark={isDark}
           />
         </SettingRow>
 
-        {/* CLI Provider Toggle (only show in CLI mode) */}
-        {mode === 'legacy-cli' && (
-          <SettingRow label="CLI Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
+        {/* Mode description */}
+        <div style={{ fontSize: 11, color: mutedColor, marginTop: -6, marginBottom: 12, lineHeight: 1.4 }}>
+          {mode === 'mcp'
+            ? 'Annotations are queued for your AI agent to process'
+            : 'Annotations processed instantly'}
+        </div>
+
+        {/* MCP Mode Info */}
+        {mode === 'mcp' && (
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 10,
+              backgroundColor: isDark ? '#1a2332' : '#f0f7ff',
+              border: `1px solid ${isDark ? '#2a3a4a' : '#d0e4ff'}`,
+              marginBottom: 12,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 600, color: isDark ? '#7bb8ff' : '#2563eb', marginBottom: 6 }}>
+              MCP Mode
+            </div>
+            <div style={{ fontSize: 11, color: isDark ? '#8899aa' : '#555', lineHeight: 1.5 }}>
+              Annotations are saved and picked up by your AI agent (Cursor, Claude Desktop, etc.) 
+              via the Skema MCP server. No API keys needed — your agent handles the generation.
+            </div>
+          </div>
+        )}
+
+        {/* Engine sub-toggle (only in Direct mode) */}
+        {mode !== 'mcp' && (
+          <>
+            <SettingRow label="Engine" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
+              <ToggleSwitch
+                options={['CLI', 'API']}
+                value={mode === 'direct-api' ? 1 : 0}
+                onChange={(idx) => onModeChange(idx === 1 ? 'direct-api' : 'direct-cli')}
+                isDark={isDark}
+              />
+            </SettingRow>
+            <div style={{ fontSize: 11, color: mutedColor, marginTop: -6, marginBottom: 12, lineHeight: 1.4 }}>
+              {mode === 'direct-cli'
+                ? 'Uses Gemini/Claude CLI agents (no API key needed)'
+                : 'Uses AI SDKs directly (requires API key)'}
+            </div>
+          </>
+        )}
+
+        {/* CLI Provider Toggle (only in CLI mode) */}
+        {mode === 'direct-cli' && (
+          <SettingRow label="Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
             <ToggleSwitch
               options={['Gemini', 'Claude']}
               value={provider === 'claude' ? 1 : 0}
@@ -170,9 +202,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </SettingRow>
         )}
 
-        {/* API Provider Toggle (only show in API mode) */}
+        {/* API Provider Selection (only in API mode) */}
         {mode === 'direct-api' && (
-          <SettingRow label="API Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
+          <SettingRow label="Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
             <select
               value={provider}
               onChange={(e) => onProviderChange(e.target.value as ProviderName)}
@@ -332,6 +364,61 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ options, value, onChange, i
     </div>
   );
 };
+
+// =============================================================================
+// Theme Icon Toggle (Sun / Moon)
+// =============================================================================
+
+interface ThemeIconToggleProps {
+  isDark: boolean;
+  onToggle: () => void;
+}
+
+const ThemeIconToggle: React.FC<ThemeIconToggleProps> = ({ isDark, onToggle }) => (
+  <button
+    onClick={onToggle}
+    title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 36,
+      height: 36,
+      border: 'none',
+      borderRadius: 10,
+      backgroundColor: isDark ? '#333333' : '#f0f0f0',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    }}
+  >
+    {isDark ? (
+      // Moon icon
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path
+          d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"
+          fill="#fbbf24"
+          stroke="#fbbf24"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ) : (
+      // Sun icon
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="12" cy="12" r="5" fill="#FF6800" stroke="#FF6800" strokeWidth="2" />
+        <line x1="12" y1="1" x2="12" y2="3" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="12" y1="21" x2="12" y2="23" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="1" y1="12" x2="3" y2="12" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="21" y1="12" x2="23" y2="12" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="#FF6800" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    )}
+  </button>
+);
 
 interface ApiKeyInputProps {
   label: string;

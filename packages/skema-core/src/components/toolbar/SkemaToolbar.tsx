@@ -360,9 +360,10 @@ export interface SkemaToolbarProps {
     isExpanded?: boolean;
     onExpandedChange?: (expanded: boolean) => void;
     onStylePanelChange?: (open: boolean) => void;
+    isDark?: boolean;
 }
 
-export const SkemaToolbar: React.FC<SkemaToolbarProps> = ({ isExpanded: controlledExpanded, onExpandedChange, onStylePanelChange }) => {
+export const SkemaToolbar: React.FC<SkemaToolbarProps> = ({ isExpanded: controlledExpanded, onExpandedChange, onStylePanelChange, isDark = false }) => {
     const editor = useEditor();
     const tools = useTools();
     const shapesButtonRef = useRef<HTMLButtonElement>(null);
@@ -438,9 +439,11 @@ export const SkemaToolbar: React.FC<SkemaToolbarProps> = ({ isExpanded: controll
                         alignItems: 'center',
                         gap: 6,
                         padding: '6px 12px',
-                        backgroundColor: 'white',
+                        backgroundColor: isDark ? '#1a1a1a' : 'white',
                         borderRadius: 28,
-                        boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+                        boxShadow: isDark
+                            ? '0 2px 10px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08)'
+                            : '0 2px 10px rgba(0,0,0,0.15)',
                         pointerEvents: 'auto',
                     }}
                 >

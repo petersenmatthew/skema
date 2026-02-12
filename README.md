@@ -33,33 +33,29 @@ bun add skema-core
 npm install skema-core
 ```
 
-### 2. Install an AI CLI
+### 2. Install an AI CLI (for Direct CLI mode)
 
-Skema uses CLI tools for AI code generation. Install at least one:
+By default, Skema uses CLI agents that handle their own authentication (no API key needed):
 
 ```bash
 # Gemini CLI (recommended)
-npm install -g @anthropic-ai/gemini-cli
+npm install -g @google/gemini-cli
 
 # Or Claude Code CLI
 npm install -g @anthropic-ai/claude-code
 ```
 
-### 3. Set up your API key
+Run the CLI once to complete its login/auth flow before using with Skema.
 
-Skema uses vision AI to analyze your drawings. Add your API key to a `.env` file in your project root:
+> **Alternative: Direct API mode** -- If you prefer to use API keys instead of CLI tools, switch to "API" engine in the Skema settings panel and set your API key. Supports Gemini, Claude, and OpenAI. Add keys to `.env` or enter them in the settings panel:
+>
+> ```env
+> GEMINI_API_KEY=your_api_key
+> ANTHROPIC_API_KEY=your_api_key
+> OPENAI_API_KEY=your_api_key
+> ```
 
-```env
-# For Gemini (recommended)
-GEMINI_API_KEY=your_api_key
-
-# Or for Claude
-ANTHROPIC_API_KEY=your_api_key
-```
-
-Get your API key from [Google AI Studio](https://aistudio.google.com/apikey) or [Anthropic Console](https://console.anthropic.com/).
-
-### 4. Add Skema to your app
+### 3. Add Skema to your app
 
 #### Next.js App Router (Next.js 13+)
 
@@ -125,7 +121,7 @@ export default function Page() {
 }
 ```
 
-### 5. Start the daemon
+### 4. Start the daemon
 
 In a separate terminal, start the Skema daemon in your project directory:
 
@@ -136,7 +132,7 @@ npx skema-core
 The daemon runs a WebSocket server that:
 - Connects to your browser (auto-connects to `ws://localhost:9999`)
 - Receives annotations from the Skema component
-- Spawns AI CLI to generate code changes
+- Calls AI APIs (Gemini, Claude, or OpenAI) to generate code changes
 - Streams results back to the browser
 - Creates git snapshots for undo/revert
 
@@ -147,11 +143,52 @@ That's it! Press **⌘⇧E** (Cmd+Shift+E) to toggle the Skema overlay.
 ```bash
 npx skema-core                      # Start daemon (default port 9999)
 npx skema-core --port 8080          # Custom port
-npx skema-core --provider claude    # Use Claude Code CLI instead of Gemini
+npx skema-core --provider claude    # Use Claude instead of Gemini
 npx skema-core --dir /path/to/proj  # Set working directory
+npx skema-core --mcp                # Start as MCP server (for Cursor/Claude Desktop)
 npx skema-core init                 # Initialize project (creates config files)
 npx skema-core help                 # Show help
 ```
+
+### Execution Modes
+
+Skema supports three execution modes, configurable via the settings panel or CLI:
+
+- **Direct CLI** (default): Annotations are processed instantly using Gemini/Claude CLI agents. No API key needed -- the CLI tools handle their own auth. The CLI agents can autonomously read, write, and modify your files.
+- **Direct API**: Annotations are processed instantly using AI SDK calls. Requires an API key. Supports Gemini, Claude, and OpenAI.
+- **MCP**: Annotations are **queued** instead of processed immediately. An external AI agent (Cursor, Claude Desktop, etc.) connects via MCP to retrieve and process them. The agent does the code generation -- Skema just provides the annotation context. No API keys needed in Skema.
+
+#### Setting up MCP Mode
+
+1. Toggle to **MCP** in the Skema settings panel
+2. Start the daemon: `npx skema-core`
+3. Add the MCP server to your agent. For Cursor, add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "skema": {
+      "command": "node",
+      "args": ["./node_modules/skema-core/dist/mcp.js"]
+    }
+  }
+}
+```
+
+4. Annotate in the browser -- annotations are queued
+5. Tell your agent: "Process the pending Skema annotations" or the agent will pick them up via `skema_watch`
+
+**MCP Tools:**
+
+| Tool | Description |
+|------|-------------|
+| `skema_get_pending` | Get all pending annotations awaiting processing |
+| `skema_get_all_annotations` | Get all annotations with their status |
+| `skema_get_annotation` | Get a specific annotation by ID |
+| `skema_acknowledge` | Mark an annotation as seen/in-progress |
+| `skema_resolve` | Mark as resolved with a summary of what was done |
+| `skema_dismiss` | Dismiss with a reason |
+| `skema_watch` | Block until new annotations appear (for hands-free loops) |
 
 > **Note**: After installing `skema-core`, you can also use the `skema` command directly (e.g., `skema init`).
 
@@ -201,24 +238,55 @@ bun run dev
 
 ## Architecture
 
+### Direct CLI Mode (default)
+
 ```
-┌──────────────────┐     WebSocket     ┌─────────────────┐
-│  Browser         │ ←───────────────→ │  Daemon         │
-│  (Skema overlay) │                   │  (skema-core)   │
-└──────────────────┘                   └────────┬────────┘
-                                               │ spawns
-                                               ▼
-                                      ┌─────────────────┐
-                                      │  AI CLI         │
-                                      │  (gemini/claude)│
-                                      └─────────────────┘
+┌──────────────────┐     WebSocket     ┌─────────────────┐   spawns    ┌──────────────┐
+│  Browser         │ ←───────────────→ │  Daemon         │ ──────────→ │  AI CLI Agent │
+│  (Skema overlay) │                   │  (skema-core)   │             │  (gemini/     │
+└──────────────────┘                   └─────────────────┘             │   claude)     │
+                                                                      └──────────────┘
 ```
 
 1. User creates annotation in browser
 2. Skema sends annotation to daemon via WebSocket
-3. Daemon creates git snapshot, builds prompt, spawns AI CLI
-4. AI CLI modifies files, streams output back
+3. Daemon creates git snapshot, builds prompt, spawns CLI agent
+4. CLI agent autonomously reads/writes files to implement changes
 5. User can revert changes using git snapshots
+
+### Direct API Mode
+
+```
+┌──────────────────┐     WebSocket     ┌─────────────────┐     API      ┌──────────────┐
+│  Browser         │ ←───────────────→ │  Daemon         │ ──────────→  │  AI Provider  │
+│  (Skema overlay) │                   │  (skema-core)   │              │  (Gemini/     │
+└──────────────────┘                   └─────────────────┘              │  Claude/OpenAI)│
+                                                                       └──────────────┘
+```
+
+Same flow, but uses AI SDK calls instead of CLI tools. Requires API keys.
+
+### MCP Mode
+
+```
+┌──────────────────┐     WebSocket     ┌─────────────────┐     WebSocket     ┌─────────────────┐
+│  Browser         │ ──────────────→   │  Daemon         │  ←──────────────  │  MCP Server     │
+│  (Skema overlay) │   annotations     │  (annotation    │   reads/manages   │  (stdio)        │
+└──────────────────┘   are queued      │   store)        │   annotations     └────────┬────────┘
+                                       └─────────────────┘                            │ MCP
+                                                                                      ▼
+                                                                             ┌──────────────────┐
+                                                                             │  AI Agent        │
+                                                                             │  (Cursor, Claude │
+                                                                             │   Desktop, etc.) │
+                                                                             └──────────────────┘
+```
+
+1. User creates annotations in the browser overlay
+2. Annotations are queued in the daemon's store (not processed)
+3. AI agent calls `skema_get_pending` via MCP to retrieve queued annotations
+4. Agent reads the annotation context (selectors, drawings, comments) and makes code changes itself
+5. Agent calls `skema_resolve` to mark annotations as done
 
 ## Props
 

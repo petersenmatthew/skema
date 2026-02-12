@@ -38,3 +38,4 @@ bun.lockb
 # IDE
 .idea/
 .vscode/
+.cursor/
