@@ -40,6 +40,7 @@ import { AnnotationsSidebar } from './annotations/AnnotationsSidebar';
 import { SelectionOverlay } from './overlays/SelectionOverlay';
 import { ProcessingOverlay } from './overlays/ProcessingOverlay';
 import { AnnotationPopup, AnnotationPopupHandle } from './AnnotationPopup';
+import { SettingsPanel } from './settings/SettingsPanel';
 
 // Extracted Hooks
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -90,6 +91,9 @@ export const Skema: React.FC<SkemaProps> = ({
     isGenerating,
     generate,
     revert,
+    setMode,
+    setProvider,
+    setApiKey,
   } = useDaemon({
     url: daemonUrl || 'ws://localhost:9999',
     autoConnect: daemonUrl !== null,
@@ -960,28 +964,17 @@ export const Skema: React.FC<SkemaProps> = ({
       {/* Hide tldraw UI elements */}
       <style>{skemaHiddenUiStyles}</style>
       
-      {/* Hide style panel when settings is not active */}
-      {!isStylePanelOpen && (
-        <style>{`
-          .tlui-style-panel__wrapper,
-          .tlui-style-panel {
-            display: none !important;
-          }
-        `}</style>
-      )}
-      
-      {/* Style panel positioning when visible - directly above the bottom-right settings button */}
-      {isStylePanelOpen && (
-        <style>{`
-          .tlui-style-panel__wrapper {
-            position: fixed !important;
-            bottom: 68px !important;
-            right: 16px !important;
-            top: auto !important;
-            left: auto !important;
-          }
-        `}</style>
-      )}
+      {/* Style panel - only visible when toolbar is expanded, positioned in top right corner */}
+      <style>{`
+        .tlui-style-panel__wrapper {
+          position: fixed !important;
+          top: 16px !important;
+          right: 16px !important;
+          bottom: auto !important;
+          left: auto !important;
+          ${isToolbarExpanded ? '' : 'display: none !important;'}
+        }
+      `}</style>
 
       {/* Floating Settings Button - Bottom Right */}
       {isToolbarExpanded && (
@@ -1025,6 +1018,20 @@ export const Skema: React.FC<SkemaProps> = ({
           </svg>
         </button>
       )}
+
+      {/* Settings Panel */}
+      <SettingsPanel
+        isOpen={isStylePanelOpen}
+        onClose={() => setIsStylePanelOpen(false)}
+        zIndex={zIndex}
+        connected={daemonState.connected}
+        mode={daemonState.mode}
+        provider={daemonState.provider}
+        availableProviders={daemonState.availableProviders}
+        onModeChange={setMode}
+        onProviderChange={setProvider}
+        onApiKeyChange={setApiKey}
+      />
 
       {/* tldraw overlay - only intercept events when toolbar is expanded */}
       <div
