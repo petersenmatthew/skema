@@ -89,10 +89,14 @@ export const Skema: React.FC<SkemaProps> = ({
   });
   const isDark = theme === 'dark';
 
-  // Persist theme to localStorage
+  // Persist theme to localStorage and sync with tldraw
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('skema-theme', theme);
+    }
+    // Sync tldraw's dark mode with Skema theme
+    if (editorRef.current) {
+      editorRef.current.user.updateUserPreferences({ colorScheme: theme });
     }
   }, [theme]);
 
@@ -840,6 +844,9 @@ export const Skema: React.FC<SkemaProps> = ({
   const handleMount = useCallback((editor: Editor) => {
     editorRef.current = editor;
 
+    // Set initial dark mode to match Skema theme
+    editor.user.updateUserPreferences({ colorScheme: theme });
+
     // Set default arrow style to arc (curved)
     editor.setStyleForNextShapes(ArrowShapeKindStyle, 'arc');
 
@@ -929,7 +936,7 @@ export const Skema: React.FC<SkemaProps> = ({
         lastBrush = next.brush;
       }
     });
-  }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation]);
+  }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation, theme]);
 
   // =============================================================================
   // Click Handler (for canceling pending annotation)
