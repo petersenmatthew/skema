@@ -3,7 +3,17 @@
 // =============================================================================
 
 import type { TLComponents, TLUiOverrides } from 'tldraw';
+import { DefaultColorThemePalette } from 'tldraw';
 import { SkemaOverlays } from '../components/overlays/LassoOverlay';
+
+/**
+ * Override tldraw's dark mode "black" color to stay dark.
+ * By default, tldraw inverts "black" to light gray (#f2f2f2) in dark mode
+ * for visibility on dark canvases. Since Skema is a transparent overlay,
+ * the pencil should remain dark regardless of theme.
+ */
+DefaultColorThemePalette.darkMode.black =
+  DefaultColorThemePalette.lightMode.black;
 
 /**
  * Custom tldraw components configuration for Skema overlay mode
