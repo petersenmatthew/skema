@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { startDaemon } from '../server/daemon';
+import { startDaemon, type ExecutionMode } from '../server/daemon';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -10,25 +10,48 @@ function printHelp() {
   console.log('');
   console.log('  Usage:');
   console.log('    npx skema-core          Start the daemon (default)');
+  console.log('    npx skema-core --mcp    Start as MCP server (for Cursor/Claude Desktop)');
   console.log('    npx skema-core init     Configure your project');
   console.log('    npx skema-core help     Show this help');
   console.log('');
   console.log('  Options (for daemon):');
-  console.log('    -p, --port <port>  Port number (default: 9999)');
-  console.log('    -d, --dir <path>   Working directory');
-  console.log('    --provider <name>  Default AI provider (gemini|claude)');
+  console.log('    -p, --port <port>       Port number (default: 9999)');
+  console.log('    -d, --dir <path>        Working directory');
+  console.log('    --provider <name>       Default AI provider (gemini|claude|openai)');
+  console.log('    --mode <mode>           Execution mode (direct-api|legacy-cli|mcp)');
+  console.log('    --mcp                   Start as MCP server (stdio transport)');
+  console.log('');
+  console.log('  Execution Modes:');
+  console.log('    legacy-cli    Spawn gemini/claude CLI tools (default)');
+  console.log('    direct-api    Use AI SDKs directly with API keys');
+  console.log('    mcp           Run as MCP server for IDE integration');
   console.log('');
   console.log('  Examples:');
   console.log('    npx skema-core');
   console.log('    npx skema-core --port 8080');
+  console.log('    npx skema-core --mode direct-api');
+  console.log('    npx skema-core --mcp');
   console.log('    npx skema-core init');
+  console.log('');
+  console.log('  Environment Variables:');
+  console.log('    GEMINI_API_KEY      For Gemini API access');
+  console.log('    ANTHROPIC_API_KEY   For Claude API access');
+  console.log('    OPENAI_API_KEY      For OpenAI API access');
   console.log('');
   console.log('  Note: After installing skema-core, you can also use "skema" directly.');
   console.log('');
 }
 
-function parseArgs(args: string[]) {
-  const config: { port?: number; cwd?: string; defaultProvider?: 'gemini' | 'claude' } = {};
+interface ParsedConfig {
+  port?: number;
+  cwd?: string;
+  defaultProvider?: 'gemini' | 'claude' | 'openai';
+  defaultMode?: ExecutionMode;
+  mcp?: boolean;
+}
+
+function parseArgs(args: string[]): ParsedConfig {
+  const config: ParsedConfig = {};
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -41,8 +64,13 @@ function parseArgs(args: string[]) {
       config.cwd = next;
       i++;
     } else if (arg === '--provider') {
-      config.defaultProvider = next as 'gemini' | 'claude';
+      config.defaultProvider = next as 'gemini' | 'claude' | 'openai';
       i++;
+    } else if (arg === '--mode') {
+      config.defaultMode = next as ExecutionMode;
+      i++;
+    } else if (arg === '--mcp') {
+      config.mcp = true;
     }
   }
 
@@ -54,9 +82,30 @@ async function runInit() {
   await import('./init');
 }
 
+async function runMcpServer() {
+  // Dynamic import the MCP server
+  const { startMcpServer } = await import('../mcp/server');
+  await startMcpServer();
+}
+
 function runDaemon(args: string[]) {
   const config = parseArgs(args);
-  startDaemon(config);
+  
+  // If --mcp flag is set, start MCP server instead
+  if (config.mcp) {
+    runMcpServer().catch((error) => {
+      console.error('[Skema] MCP server error:', error);
+      process.exit(1);
+    });
+    return;
+  }
+  
+  startDaemon({
+    port: config.port,
+    cwd: config.cwd,
+    defaultProvider: config.defaultProvider,
+    defaultMode: config.defaultMode,
+  });
 }
 
 // Main
@@ -67,6 +116,12 @@ if (command === 'help' || command === '-h' || command === '--help') {
 } else if (command === 'serve') {
   // Support "skema serve" as alias
   runDaemon(args.slice(1));
+} else if (command === 'mcp' || command === '--mcp') {
+  // Direct MCP server start
+  runMcpServer().catch((error) => {
+    console.error('[Skema] MCP server error:', error);
+    process.exit(1);
+  });
 } else {
   // Default: run daemon
   runDaemon(args);

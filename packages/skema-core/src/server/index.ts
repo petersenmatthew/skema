@@ -73,3 +73,22 @@ export {
   type VisionAnalysisResult,
   type VisionConfig,
 } from './vision';
+
+// =============================================================================
+// Direct API Providers (SDK-based AI generation)
+// =============================================================================
+
+export {
+  getProvider,
+  getAvailableProviders as getDirectProviders,
+  registerProvider,
+  getApiKeyFromEnv,
+  createGeminiProvider,
+  createClaudeProvider,
+  createOpenAIProvider,
+  type AIProvider as DirectAIProvider,
+  type ExecutionMode,
+  type ProviderName,
+  type GenerateOptions,
+  type ProviderConfig,
+} from './providers';

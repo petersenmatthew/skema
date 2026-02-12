@@ -40,4 +40,19 @@ export default defineConfig([
     treeshake: true,
     minify: false,
   },
+  // MCP Server entry point
+  {
+    entry: { mcp: 'src/mcp/index.ts' },
+    format: ['cjs'],
+    dts: false,
+    splitting: false,
+    sourcemap: false,
+    clean: false,
+    platform: 'node',
+    banner: {
+      js: '#!/usr/bin/env node',
+    },
+    treeshake: true,
+    minify: false,
+  },
 ]);

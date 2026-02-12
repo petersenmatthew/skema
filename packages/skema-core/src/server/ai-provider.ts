@@ -4,7 +4,13 @@ import { spawn, type ChildProcess } from 'child_process';
 // AI Provider Types
 // =============================================================================
 
+// CLI-based providers (legacy mode) - only gemini and claude have CLIs
 export type AIProvider = 'gemini' | 'claude';
+
+// All provider names (for events and direct API)
+export type AnyProvider = 'gemini' | 'claude' | 'openai';
+
+// Note: OpenAI is only supported via direct API mode (see ./providers/)
 
 export interface AIProviderConfig {
   provider: AIProvider;
@@ -18,7 +24,7 @@ export interface AIStreamEvent {
   type: 'init' | 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'debug';
   content?: string;
   timestamp: string;
-  provider: AIProvider;
+  provider: AnyProvider;
   /** Raw event from the CLI (provider-specific) */
   raw?: unknown;
 }

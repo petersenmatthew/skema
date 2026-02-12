@@ -16,13 +16,16 @@
     "drawing",
     "dom",
     "overlay",
-    "development-tool"
+    "development-tool",
+    "mcp",
+    "ai"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "skema": "./dist/cli.js"
+    "skema": "./dist/cli.js",
+    "skema-mcp": "./dist/mcp.js"
   },
   "exports": {
     ".": {
@@ -46,6 +49,10 @@
         "types": "./dist/server.d.ts",
         "default": "./dist/server.js"
       }
+    },
+    "./mcp": {
+      "import": "./dist/mcp.js",
+      "require": "./dist/mcp.js"
     }
   },
   "files": [
@@ -63,9 +70,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@google/generative-ai": "^0.24.1",
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "dotenv": "^16.4.5",
     "framer-motion": "^12.34.0",
-    "skema-core": "^0.1.2",
+    "openai": "^4.0.0",
     "tldraw": "^3.15.5",
     "ws": "^8.18.0"
   },

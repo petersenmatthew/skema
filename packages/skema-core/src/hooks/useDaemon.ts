@@ -6,11 +6,16 @@ import type { Annotation } from '../types';
 // =============================================================================
 
 export type AIProvider = 'gemini' | 'claude';
+export type ProviderName = 'gemini' | 'claude' | 'openai';
+export type ExecutionMode = 'mcp' | 'direct-api' | 'legacy-cli';
 
 export interface DaemonState {
   connected: boolean;
   provider: AIProvider;
+  mode: ExecutionMode;
   availableProviders: AIProvider[];
+  availableDirectProviders: ProviderName[];
+  availableModes: ExecutionMode[];
   cwd: string;
 }
 
@@ -18,8 +23,17 @@ export interface AIStreamEvent {
   type: 'init' | 'text' | 'tool_use' | 'tool_result' | 'error' | 'done' | 'debug';
   content?: string;
   timestamp: string;
-  provider: AIProvider;
+  provider: ProviderName;
   raw?: unknown;
+}
+
+export interface GenerateOptions {
+  /** Override execution mode for this request */
+  mode?: ExecutionMode;
+  /** Override provider for this request */
+  provider?: ProviderName;
+  /** API key to use (for direct-api mode) */
+  apiKey?: string;
 }
 
 export interface UseDaemonOptions {
@@ -45,11 +59,18 @@ export interface UseDaemonReturn {
   /** Disconnect from daemon */
   disconnect: () => void;
   /** Switch AI provider */
-  setProvider: (provider: AIProvider) => Promise<boolean>;
+  setProvider: (provider: ProviderName) => Promise<boolean>;
+  /** Switch execution mode */
+  setMode: (mode: ExecutionMode) => Promise<boolean>;
+  /** Set API key for direct-api mode (stored per session) */
+  setApiKey: (provider: ProviderName, apiKey: string) => Promise<boolean>;
+  /** Clear API key(s) */
+  clearApiKey: (provider?: ProviderName) => Promise<boolean>;
   /** Generate code from annotation (streaming) */
   generate: (
     annotation: Partial<Annotation> & { comment?: string },
-    onEvent?: (event: AIStreamEvent) => void
+    onEvent?: (event: AIStreamEvent) => void,
+    options?: GenerateOptions
   ) => Promise<{ success: boolean; annotationId: string }>;
   /** Revert changes for an annotation */
   revert: (annotationId: string) => Promise<{ success: boolean; message: string }>;
@@ -76,7 +97,10 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
   const [state, setState] = useState<DaemonState>({
     connected: false,
     provider: 'gemini',
+    mode: 'legacy-cli',
     availableProviders: [],
+    availableDirectProviders: [],
+    availableModes: ['mcp', 'direct-api', 'legacy-cli'],
     cwd: '',
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -128,7 +152,10 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           ...prev,
           connected: true,
           provider: msg.provider || prev.provider,
+          mode: msg.mode || prev.mode,
           availableProviders: msg.availableProviders || prev.availableProviders,
+          availableDirectProviders: msg.availableDirectProviders || prev.availableDirectProviders,
+          availableModes: msg.availableModes || prev.availableModes,
           cwd: msg.cwd || prev.cwd,
         }));
         setError(null);
@@ -159,6 +186,11 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
       // Handle provider change
       if (msg.type === 'provider-changed') {
         setState((prev) => ({ ...prev, provider: msg.provider }));
+      }
+
+      // Handle mode change
+      if (msg.type === 'mode-changed') {
+        setState((prev) => ({ ...prev, mode: msg.mode }));
       }
 
       // Handle errors
@@ -247,9 +279,9 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
   }, []);
 
   // Switch AI provider
-  const setProvider = useCallback(async (provider: AIProvider): Promise<boolean> => {
+  const setProvider = useCallback(async (provider: ProviderName): Promise<boolean> => {
     try {
-      const response = await sendRequest<{ type: string; provider: AIProvider }>('set-provider', { provider });
+      const response = await sendRequest<{ type: string; provider: ProviderName }>('set-provider', { provider });
       return response.type === 'provider-changed';
     } catch (e) {
       console.error('[useDaemon] Failed to set provider:', e);
@@ -257,10 +289,44 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     }
   }, [sendRequest]);
 
+  // Switch execution mode
+  const setMode = useCallback(async (mode: ExecutionMode): Promise<boolean> => {
+    try {
+      const response = await sendRequest<{ type: string; mode: ExecutionMode }>('set-mode', { mode });
+      return response.type === 'mode-changed';
+    } catch (e) {
+      console.error('[useDaemon] Failed to set mode:', e);
+      return false;
+    }
+  }, [sendRequest]);
+
+  // Set API key for direct-api mode
+  const setApiKey = useCallback(async (provider: ProviderName, apiKey: string): Promise<boolean> => {
+    try {
+      const response = await sendRequest<{ type: string }>('set-api-key', { provider, apiKey });
+      return response.type === 'api-key-set';
+    } catch (e) {
+      console.error('[useDaemon] Failed to set API key:', e);
+      return false;
+    }
+  }, [sendRequest]);
+
+  // Clear API key(s)
+  const clearApiKey = useCallback(async (provider?: ProviderName): Promise<boolean> => {
+    try {
+      const response = await sendRequest<{ type: string }>('clear-api-key', { provider });
+      return response.type === 'api-key-cleared' || response.type === 'api-keys-cleared';
+    } catch (e) {
+      console.error('[useDaemon] Failed to clear API key:', e);
+      return false;
+    }
+  }, [sendRequest]);
+
   // Generate code from annotation
   const generate = useCallback(async (
     annotation: Partial<Annotation> & { comment?: string },
-    onEvent?: (event: AIStreamEvent) => void
+    onEvent?: (event: AIStreamEvent) => void,
+    options?: GenerateOptions
   ): Promise<{ success: boolean; annotationId: string }> => {
     const id = nextId();
 
@@ -283,6 +349,10 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
         id,
         type: 'generate',
         annotation,
+        // Include optional overrides
+        ...(options?.mode && { mode: options.mode }),
+        ...(options?.provider && { provider: options.provider }),
+        ...(options?.apiKey && { apiKey: options.apiKey }),
       }));
     });
   }, [nextId]);
@@ -333,6 +403,9 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     connect,
     disconnect,
     setProvider,
+    setMode,
+    setApiKey,
+    clearApiKey,
     generate,
     revert,
     readFile,

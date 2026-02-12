@@ -11,6 +11,12 @@ import {
 } from './ai-provider';
 import { buildPromptFromAnnotation, type ProjectContext } from './gemini-cli';
 import { analyzeImage, isVisionAvailable } from './vision';
+import { 
+  getProvider as getDirectProvider, 
+  getAvailableProviders as getDirectProviders,
+  type ProviderName,
+  type ExecutionMode,
+} from './providers';
 import type { Annotation } from '../types';
 
 // =============================================================================
@@ -24,6 +30,8 @@ export interface DaemonConfig {
   cwd?: string;
   /** Default AI provider */
   defaultProvider?: AIProvider;
+  /** Default execution mode */
+  defaultMode?: ExecutionMode;
 }
 
 export interface IncomingMessage {
@@ -46,9 +54,26 @@ export interface OutgoingMessage {
 
 let currentProvider: AIProvider = 'gemini';
 let workingDirectory: string = process.cwd();
+let currentMode: ExecutionMode = 'legacy-cli'; // Default to legacy for backwards compatibility
+
+// API keys stored per-session (from browser UI in direct-api mode)
+let sessionApiKeys: Record<ProviderName, string | undefined> = {
+  gemini: undefined,
+  claude: undefined,
+  openai: undefined,
+};
 
 // Store annotation snapshots for undo (same as gemini-cli.ts)
 const annotationSnapshots = new Map<string, string>();
+
+// Helper to get environment variable name for a provider
+function getEnvKeyName(provider: ProviderName): string {
+  switch (provider) {
+    case 'gemini': return 'GEMINI_API_KEY';
+    case 'claude': return 'ANTHROPIC_API_KEY';
+    case 'openai': return 'OPENAI_API_KEY';
+  }
+}
 
 // =============================================================================
 // Git Snapshot Functions (for undo support)
@@ -129,29 +154,96 @@ const handlers: Record<string, MessageHandler> = {
   },
 
   'set-provider': async (msg) => {
-    const newProvider = msg.provider as AIProvider;
-    if (!['gemini', 'claude'].includes(newProvider)) {
+    const newProvider = msg.provider as ProviderName;
+    if (!['gemini', 'claude', 'openai'].includes(newProvider)) {
       return { id: msg.id, type: 'error', error: `Invalid provider: ${newProvider}` };
     }
-    if (!isProviderAvailable(newProvider)) {
+    
+    // OpenAI only supported in direct-api mode
+    if (newProvider === 'openai' && currentMode === 'legacy-cli') {
       return {
         id: msg.id,
         type: 'error',
-        error: `Provider "${newProvider}" is not installed. Run: ${newProvider === 'gemini' ? 'npm install -g @anthropic-ai/gemini-cli' : 'npm install -g @anthropic-ai/claude-code'}`,
+        error: `OpenAI is only supported in direct-api mode. Switch mode first with set-mode.`,
       };
     }
-    currentProvider = newProvider;
+    
+    // Check CLI availability in legacy mode
+    if (currentMode === 'legacy-cli' && !isProviderAvailable(newProvider as AIProvider)) {
+      return {
+        id: msg.id,
+        type: 'error',
+        error: `Provider "${newProvider}" CLI is not installed.`,
+      };
+    }
+    
+    currentProvider = newProvider as AIProvider;
     console.log(`[Daemon] Switched to provider: ${currentProvider}`);
     return { id: msg.id, type: 'provider-changed', provider: currentProvider };
   },
 
   // -------------------------------------------------------------------------
-  // AI Generation (streaming)
+  // Mode Management
+  // -------------------------------------------------------------------------
+  'get-mode': async (msg) => {
+    return {
+      id: msg.id,
+      type: 'mode',
+      mode: currentMode,
+      availableModes: ['mcp', 'direct-api', 'legacy-cli'] as ExecutionMode[],
+    };
+  },
+
+  'set-mode': async (msg) => {
+    const newMode = msg.mode as ExecutionMode;
+    if (!['mcp', 'direct-api', 'legacy-cli'].includes(newMode)) {
+      return { id: msg.id, type: 'error', error: `Invalid mode: ${newMode}` };
+    }
+    currentMode = newMode;
+    console.log(`[Daemon] Switched to mode: ${currentMode}`);
+    return { id: msg.id, type: 'mode-changed', mode: currentMode };
+  },
+
+  // -------------------------------------------------------------------------
+  // API Key Management (for direct-api mode)
+  // -------------------------------------------------------------------------
+  'set-api-key': async (msg) => {
+    const provider = msg.provider as ProviderName;
+    const apiKey = msg.apiKey as string;
+    
+    if (!['gemini', 'claude', 'openai'].includes(provider)) {
+      return { id: msg.id, type: 'error', error: `Invalid provider: ${provider}` };
+    }
+    
+    sessionApiKeys[provider] = apiKey;
+    console.log(`[Daemon] API key set for ${provider}`);
+    return { id: msg.id, type: 'api-key-set', provider };
+  },
+
+  'clear-api-key': async (msg) => {
+    const provider = msg.provider as ProviderName;
+    if (provider) {
+      sessionApiKeys[provider] = undefined;
+      return { id: msg.id, type: 'api-key-cleared', provider };
+    }
+    // Clear all
+    sessionApiKeys = { gemini: undefined, claude: undefined, openai: undefined };
+    return { id: msg.id, type: 'api-keys-cleared' };
+  },
+
+  // -------------------------------------------------------------------------
+  // AI Generation (streaming) - supports all three modes
   // -------------------------------------------------------------------------
   generate: async (msg, ws) => {
     const annotation = msg.annotation as Partial<Annotation> & { comment?: string };
     const projectContext = msg.projectContext as ProjectContext | undefined;
     const annotationId = (annotation as { id?: string }).id || `temp-${Date.now()}`;
+    
+    // Allow per-request mode and API key override
+    const requestMode = (msg.mode as ExecutionMode) || currentMode;
+    const requestApiKey = msg.apiKey as string | undefined;
+    // Provider can be AIProvider (CLI) or ProviderName (includes openai for direct API)
+    const requestProvider = (msg.provider as AIProvider | ProviderName) || currentProvider;
 
     // Create snapshot for undo
     createSnapshot(annotationId);
@@ -161,65 +253,111 @@ const handlers: Record<string, MessageHandler> = {
     const drawingAnnotation = annotation as { drawingImage?: string };
 
     if (annotation.type === 'drawing' && drawingAnnotation.drawingImage) {
-      // Always use Gemini for vision analysis (Claude Code CLI doesn't need API key,
-      // but Claude SDK for vision would need ANTHROPIC_API_KEY - simpler to just use Gemini)
-      if (isVisionAvailable('gemini')) {
-        sendMessage(ws, {
-          id: msg.id,
-          type: 'ai-event',
-          event: {
-            type: 'text',
-            content: `[Analyzing drawing with Gemini vision...]`,
-            timestamp: new Date().toISOString(),
-            provider: currentProvider,
-          },
-        });
+      sendMessage(ws, {
+        id: msg.id,
+        type: 'ai-event',
+        event: {
+          type: 'text',
+          content: `[Analyzing drawing with vision...]`,
+          timestamp: new Date().toISOString(),
+          provider: requestProvider,
+        },
+      });
 
-        const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
-          provider: 'gemini',
-        });
-
-        if (visionResult.success) {
-          visionDescription = visionResult.description;
-          sendMessage(ws, {
-            id: msg.id,
-            type: 'ai-event',
-            event: {
-              type: 'text',
-              content: `[Vision analysis complete]\n${visionDescription}`,
-              timestamp: new Date().toISOString(),
-              provider: currentProvider,
-            },
-          });
+      // Use direct API for vision in direct-api or mcp modes
+      if (requestMode === 'direct-api' || requestMode === 'mcp') {
+        const apiKey = requestApiKey || sessionApiKeys[requestProvider as ProviderName] || process.env[getEnvKeyName(requestProvider as ProviderName)];
+        const directProvider = getDirectProvider(requestProvider as ProviderName, apiKey);
+        
+        if (directProvider) {
+          try {
+            visionDescription = await directProvider.analyzeImage(
+              drawingAnnotation.drawingImage,
+              'Analyze this UI wireframe sketch for a front-end developer. Describe the layout and elements.'
+            );
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'ai-event',
+              event: {
+                type: 'text',
+                content: `[Vision analysis complete]\n${visionDescription}`,
+                timestamp: new Date().toISOString(),
+                provider: requestProvider,
+              },
+            });
+          } catch (error) {
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'ai-event',
+              event: {
+                type: 'error',
+                content: `Vision analysis failed: ${error}`,
+                timestamp: new Date().toISOString(),
+                provider: requestProvider,
+              },
+            });
+          }
         } else {
           sendMessage(ws, {
             id: msg.id,
             type: 'ai-event',
             event: {
-              type: 'error',
-              content: `Vision analysis failed: ${visionResult.error}`,
+              type: 'text',
+              content: `[Vision not available - no API key for ${requestProvider}]`,
               timestamp: new Date().toISOString(),
-              provider: currentProvider,
+              provider: requestProvider,
             },
           });
         }
       } else {
-        sendMessage(ws, {
-          id: msg.id,
-          type: 'ai-event',
-          event: {
-            type: 'text',
-            content: `[Vision not available - set GEMINI_API_KEY for image analysis]`,
-            timestamp: new Date().toISOString(),
-            provider: currentProvider,
-          },
-        });
+        // Legacy CLI mode - use Gemini vision if available
+        if (isVisionAvailable('gemini')) {
+          const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
+            provider: 'gemini',
+          });
+
+          if (visionResult.success) {
+            visionDescription = visionResult.description;
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'ai-event',
+              event: {
+                type: 'text',
+                content: `[Vision analysis complete]\n${visionDescription}`,
+                timestamp: new Date().toISOString(),
+                provider: requestProvider,
+              },
+            });
+          } else {
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'ai-event',
+              event: {
+                type: 'error',
+                content: `Vision analysis failed: ${visionResult.error}`,
+                timestamp: new Date().toISOString(),
+                provider: requestProvider,
+              },
+            });
+          }
+        } else {
+          sendMessage(ws, {
+            id: msg.id,
+            type: 'ai-event',
+            event: {
+              type: 'text',
+              content: `[Vision not available - set GEMINI_API_KEY for image analysis]`,
+              timestamp: new Date().toISOString(),
+              provider: requestProvider,
+            },
+          });
+        }
       }
     }
 
     // Build prompt using existing logic (with vision description if available)
     const prompt = buildPromptFromAnnotation(annotation, projectContext, {
-      fastMode: msg.fastMode === true, // Default to detailed mode (false) unless explicitly set to true
+      fastMode: msg.fastMode === true,
       visionDescription,
     });
 
@@ -231,36 +369,122 @@ const handlers: Record<string, MessageHandler> = {
         type: 'debug',
         content: prompt,
         timestamp: new Date().toISOString(),
-        provider: currentProvider,
+        provider: requestProvider,
       },
     });
 
-    const config: AIProviderConfig = {
-      provider: currentProvider,
-      cwd: workingDirectory,
-      model: msg.model as string | undefined,
-    };
-
-    const { process: aiProcess, events } = spawnAICLI(prompt, config);
-
-    // Stream events back
-    for await (const event of events) {
-      sendMessage(ws, {
-        id: msg.id,
-        type: 'ai-event',
-        event,
-        annotationId,
-      });
-
-      if (event.type === 'done') {
+    // Route based on execution mode
+    if (requestMode === 'direct-api' || requestMode === 'mcp') {
+      // Direct API mode - use SDK providers
+      const apiKey = requestApiKey || sessionApiKeys[requestProvider as ProviderName] || process.env[getEnvKeyName(requestProvider as ProviderName)];
+      const directProvider = getDirectProvider(requestProvider as ProviderName, apiKey);
+      
+      if (!directProvider) {
         sendMessage(ws, {
           id: msg.id,
-          type: 'generate-complete',
-          success: true,
-          annotationId,
-          provider: currentProvider,
+          type: 'ai-event',
+          event: {
+            type: 'error',
+            content: `Provider ${requestProvider} is not available. Provide an API key or switch to legacy-cli mode.`,
+            timestamp: new Date().toISOString(),
+            provider: requestProvider,
+          },
         });
-        break;
+        return;
+      }
+
+      try {
+        for await (const event of directProvider.generateStream(prompt, { cwd: workingDirectory })) {
+          sendMessage(ws, {
+            id: msg.id,
+            type: 'ai-event',
+            event,
+            annotationId,
+          });
+
+          if (event.type === 'done') {
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'generate-complete',
+              success: true,
+              annotationId,
+              provider: requestProvider,
+              mode: requestMode,
+            });
+            break;
+          }
+        }
+      } catch (error) {
+        sendMessage(ws, {
+          id: msg.id,
+          type: 'ai-event',
+          event: {
+            type: 'error',
+            content: `Generation failed: ${error}`,
+            timestamp: new Date().toISOString(),
+            provider: requestProvider,
+          },
+        });
+      }
+    } else {
+      // Legacy CLI mode - spawn CLI tools (only gemini and claude supported)
+      if (requestProvider === 'openai') {
+        sendMessage(ws, {
+          id: msg.id,
+          type: 'ai-event',
+          event: {
+            type: 'error',
+            content: `OpenAI is only supported in direct-api mode. Switch mode with set-mode.`,
+            timestamp: new Date().toISOString(),
+            provider: requestProvider,
+          },
+        });
+        return;
+      }
+
+      const cliProvider = requestProvider as AIProvider;
+      if (!isProviderAvailable(cliProvider)) {
+        sendMessage(ws, {
+          id: msg.id,
+          type: 'ai-event',
+          event: {
+            type: 'error',
+            content: `Provider ${requestProvider} CLI is not installed. Install it or switch to direct-api mode.`,
+            timestamp: new Date().toISOString(),
+            provider: requestProvider,
+          },
+        });
+        return;
+      }
+
+      const config: AIProviderConfig = {
+        provider: cliProvider,
+        cwd: workingDirectory,
+        model: msg.model as string | undefined,
+      };
+
+      const { process: aiProcess, events } = spawnAICLI(prompt, config);
+
+      // Stream events back
+      for await (const event of events) {
+        sendMessage(ws, {
+          id: msg.id,
+          type: 'ai-event',
+          event,
+          annotationId,
+        });
+
+        if (event.type === 'done') {
+          sendMessage(ws, {
+            id: msg.id,
+            type: 'generate-complete',
+            success: true,
+            annotationId,
+            provider: requestProvider,
+            mode: requestMode,
+          });
+          break;
+        }
       }
     }
   },
@@ -358,12 +582,19 @@ const handlers: Record<string, MessageHandler> = {
   // Status
   // -------------------------------------------------------------------------
   ping: async (msg) => {
+    // Get providers available in each mode
+    const cliProviders = getAvailableProviders();
+    const directProviders = getDirectProviders();
+    
     return {
       id: msg.id,
       type: 'pong',
       provider: currentProvider,
+      mode: currentMode,
       cwd: workingDirectory,
-      availableProviders: getAvailableProviders(),
+      availableProviders: cliProviders,
+      availableDirectProviders: directProviders,
+      availableModes: ['mcp', 'direct-api', 'legacy-cli'] as ExecutionMode[],
     };
   },
 };
@@ -385,8 +616,11 @@ function handleConnection(ws: WebSocket) {
   sendMessage(ws, {
     type: 'connected',
     provider: currentProvider,
+    mode: currentMode,
     cwd: workingDirectory,
     availableProviders: getAvailableProviders(),
+    availableDirectProviders: getDirectProviders(),
+    availableModes: ['mcp', 'direct-api', 'legacy-cli'] as ExecutionMode[],
   });
 
   ws.on('message', async (data) => {
@@ -443,15 +677,24 @@ export function startDaemon(config: DaemonConfig = {}): DaemonInstance {
   const port = config.port ?? 9999;
   workingDirectory = config.cwd ?? process.cwd();
   currentProvider = config.defaultProvider ?? 'gemini';
+  currentMode = config.defaultMode ?? 'legacy-cli';
 
-  // Check if default provider is available, fall back if not
-  if (!isProviderAvailable(currentProvider)) {
-    const available = getAvailableProviders();
-    if (available.length > 0) {
-      console.log(`[Daemon] ${currentProvider} not found, falling back to ${available[0]}`);
-      currentProvider = available[0];
-    } else {
-      console.warn('[Daemon] Warning: No AI providers found. Install gemini or claude CLI.');
+  // Check provider availability based on mode
+  if (currentMode === 'legacy-cli') {
+    if (!isProviderAvailable(currentProvider)) {
+      const available = getAvailableProviders();
+      if (available.length > 0) {
+        console.log(`[Daemon] ${currentProvider} CLI not found, falling back to ${available[0]}`);
+        currentProvider = available[0];
+      } else {
+        console.warn('[Daemon] Warning: No CLI providers found. Switch to direct-api mode or install gemini/claude CLI.');
+      }
+    }
+  } else {
+    // Direct API or MCP mode - check env vars
+    const directAvailable = getDirectProviders();
+    if (directAvailable.length === 0) {
+      console.warn('[Daemon] Warning: No API keys found. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.');
     }
   }
 
@@ -460,13 +703,23 @@ export function startDaemon(config: DaemonConfig = {}): DaemonInstance {
   wss.on('connection', handleConnection);
 
   wss.on('listening', () => {
+    const directProviders = getDirectProviders();
+    const cliProviders = getAvailableProviders();
+    
     console.log('');
     console.log('  ┌─────────────────────────────────────────────────┐');
     console.log('  │                                                 │');
     console.log(`  │   🎨 Skema Daemon running on ws://localhost:${port}  │`);
     console.log('  │                                                 │');
+    console.log(`  │   Mode: ${currentMode.padEnd(39)}│`);
     console.log(`  │   Provider: ${currentProvider.padEnd(35)}│`);
     console.log(`  │   Directory: ${workingDirectory.slice(-33).padEnd(34)}│`);
+    console.log('  │                                                 │');
+    if (currentMode === 'legacy-cli') {
+      console.log(`  │   CLI Providers: ${(cliProviders.join(', ') || 'none').padEnd(29)}│`);
+    } else {
+      console.log(`  │   API Providers: ${(directProviders.join(', ') || 'none').padEnd(29)}│`);
+    }
     console.log('  │                                                 │');
     console.log('  │   Waiting for browser connections...           │');
     console.log('  │                                                 │');
@@ -497,6 +750,10 @@ export function startDaemon(config: DaemonConfig = {}): DaemonInstance {
 
 export {
   currentProvider,
+  currentMode,
   workingDirectory,
   handlers,
 };
+
+// Re-export types
+export type { ExecutionMode, ProviderName } from './providers';
