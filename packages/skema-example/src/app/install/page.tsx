@@ -29,43 +29,24 @@ export default function InstallPage() {
             </p>
           </section>
 
-          {/* Step 2: Create API Route */}
+          {/* Step 2: Configure Project */}
           <section className="mb-16">
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">2. Create API Route</h2>
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">2. Configure Project</h2>
             <CodeBlock
               language="bash"
-              code={`bunx skema init
-# or: npx skema init`}
+              code={`bunx skema-core init
+# or: npx skema-core init`}
             />
             <p className="mt-4 text-sm text-muted-foreground">
-              Creates <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">app/api/gemini/route.ts</code> to handle annotations.
+              Detects your framework and configures it automatically — disables{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">React.StrictMode</code> for tldraw compatibility
+              and adds <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">transpilePackages</code> for Next.js.
             </p>
           </section>
 
-          {/* Step 3: Add API Key */}
+          {/* Step 3: Add Component */}
           <section className="mb-16">
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">3. Add Gemini API Key</h2>
-            <CodeBlock
-              language="bash"
-              code={`# .env
-GEMINI_API_KEY=your_api_key_here`}
-            />
-            <p className="mt-4 text-sm text-muted-foreground">
-              Get your key at{" "}
-              <a
-                href="https://aistudio.google.com/apikey"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-foreground underline underline-offset-2 hover:text-primary"
-              >
-                aistudio.google.com/apikey
-              </a>
-            </p>
-          </section>
-
-          {/* Step 4: Add Component */}
-          <section className="mb-16">
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">4. Add to Your App</h2>
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">3. Add to Your App</h2>
             <CodeBlock
               language="tsx"
               code={`import { Skema } from 'skema-core';
@@ -79,6 +60,39 @@ export default function Page() {
   );
 }`}
             />
+          </section>
+
+          {/* Step 4: Start the Daemon */}
+          <section className="mb-16">
+            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">4. Start the Daemon</h2>
+            <CodeBlock
+              language="bash"
+              code={`bunx skema-core
+# or: npx skema-core`}
+            />
+            <p className="mt-4 text-sm text-muted-foreground">
+              Run this in a separate terminal. Starts a WebSocket server on{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">ws://localhost:9999</code> that
+              connects to your AI provider. Requires{" "}
+              <a
+                href="https://github.com/google-gemini/gemini-cli"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                Gemini CLI
+              </a>
+              {" "}or{" "}
+              <a
+                href="https://docs.anthropic.com/en/docs/claude-code"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground underline underline-offset-2 hover:text-primary"
+              >
+                Claude Code
+              </a>
+              {" "}installed globally.
+            </p>
           </section>
 
           {/* Keyboard Shortcuts */}
