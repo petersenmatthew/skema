@@ -25,7 +25,7 @@ export default function InstallPage() {
 # or: npm install skema-core`}
             />
             <p className="mt-4 text-sm text-muted-foreground">
-              Requires <strong className="text-foreground">React 19+</strong> and <strong className="text-foreground">Next.js App Router</strong>
+              Requires <strong className="text-foreground">React 19+</strong>. Works with Next.js, Vite, Remix, and Create React App.
             </p>
           </section>
 
