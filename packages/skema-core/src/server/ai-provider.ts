@@ -7,10 +7,8 @@ import { spawn, type ChildProcess } from 'child_process';
 // CLI-based providers (legacy mode) - only gemini and claude have CLIs
 export type AIProvider = 'gemini' | 'claude';
 
-// All provider names (for events and direct API)
-export type AnyProvider = 'gemini' | 'claude' | 'openai';
-
-// Note: OpenAI is only supported via direct API mode (see ./providers/)
+// All provider names (used for events and type narrowing)
+export type AnyProvider = 'gemini' | 'claude';
 
 export interface AIProviderConfig {
   provider: AIProvider;

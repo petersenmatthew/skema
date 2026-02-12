@@ -2,7 +2,7 @@
 // Settings Panel Component
 // =============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import type { ExecutionMode, ProviderName } from '../../hooks/useDaemon';
 
 // Package version - imported at build time
@@ -20,18 +20,10 @@ export interface SettingsPanelProps {
   // Actions
   onModeChange: (mode: ExecutionMode) => Promise<boolean>;
   onProviderChange: (provider: ProviderName) => Promise<boolean>;
-  onApiKeyChange: (provider: ProviderName, apiKey: string) => Promise<boolean>;
   // Theme (controlled by parent)
   theme: 'light' | 'dark';
   onThemeChange: (theme: 'light' | 'dark') => void;
 }
-
-// LocalStorage keys
-const STORAGE_KEYS = {
-  geminiApiKey: 'skema-gemini-api-key',
-  claudeApiKey: 'skema-claude-api-key',
-  openaiApiKey: 'skema-openai-api-key',
-};
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   isOpen,
@@ -43,38 +35,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   availableProviders,
   onModeChange,
   onProviderChange,
-  onApiKeyChange,
   theme,
   onThemeChange,
 }) => {
-
-  // API key states (loaded from localStorage)
-  const [geminiKey, setGeminiKey] = useState('');
-  const [claudeKey, setClaudeKey] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
-  const [showApiKeys, setShowApiKeys] = useState(false);
-
-  // Load API keys from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setGeminiKey(localStorage.getItem(STORAGE_KEYS.geminiApiKey) || '');
-      setClaudeKey(localStorage.getItem(STORAGE_KEYS.claudeApiKey) || '');
-      setOpenaiKey(localStorage.getItem(STORAGE_KEYS.openaiApiKey) || '');
-    }
-  }, []);
-
-  // Handle API key save
-  const handleSaveApiKey = async (providerName: ProviderName, key: string) => {
-    const storageKey = providerName === 'gemini' 
-      ? STORAGE_KEYS.geminiApiKey 
-      : providerName === 'claude' 
-        ? STORAGE_KEYS.claudeApiKey 
-        : STORAGE_KEYS.openaiApiKey;
-    
-    localStorage.setItem(storageKey, key);
-    await onApiKeyChange(providerName, key);
-  };
-
   if (!isOpen) return null;
 
   const isDark = theme === 'dark';
@@ -133,10 +96,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <ThemeIconToggle isDark={isDark} onToggle={() => onThemeChange(isDark ? 'light' : 'dark')} />
         </SettingRow>
 
-        {/* Mode Toggle: Direct vs MCP */}
+        {/* Mode Toggle: CLI vs MCP */}
         <SettingRow label="Mode" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
           <ToggleSwitch
-            options={['Direct', 'MCP']}
+            options={['CLI', 'MCP']}
             value={mode === 'mcp' ? 1 : 0}
             onChange={(idx) => onModeChange(idx === 1 ? 'mcp' : 'direct-cli')}
             isDark={isDark}
@@ -147,7 +110,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <div style={{ fontSize: 11, color: mutedColor, marginTop: -6, marginBottom: 12, lineHeight: 1.4 }}>
           {mode === 'mcp'
             ? 'Annotations are queued for your AI agent to process'
-            : 'Annotations processed instantly'}
+            : 'Annotations processed instantly via CLI agents'}
         </div>
 
         {/* MCP Mode Info */}
@@ -166,28 +129,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             </div>
             <div style={{ fontSize: 11, color: isDark ? '#8899aa' : '#555', lineHeight: 1.5 }}>
               Annotations are saved and picked up by your AI agent (Cursor, Claude Desktop, etc.) 
-              via the Skema MCP server. No API keys needed — your agent handles the generation.
+              via the Skema MCP server. No CLI tools needed -- your agent handles the generation.
             </div>
           </div>
-        )}
-
-        {/* Engine sub-toggle (only in Direct mode) */}
-        {mode !== 'mcp' && (
-          <>
-            <SettingRow label="Engine" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
-              <ToggleSwitch
-                options={['CLI', 'API']}
-                value={mode === 'direct-api' ? 1 : 0}
-                onChange={(idx) => onModeChange(idx === 1 ? 'direct-api' : 'direct-cli')}
-                isDark={isDark}
-              />
-            </SettingRow>
-            <div style={{ fontSize: 11, color: mutedColor, marginTop: -6, marginBottom: 12, lineHeight: 1.4 }}>
-              {mode === 'direct-cli'
-                ? 'Uses Gemini/Claude CLI agents (no API key needed)'
-                : 'Uses AI SDKs directly (requires API key)'}
-            </div>
-          </>
         )}
 
         {/* CLI Provider Toggle (only in CLI mode) */}
@@ -200,96 +144,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               isDark={isDark}
             />
           </SettingRow>
-        )}
-
-        {/* API Provider Selection (only in API mode) */}
-        {mode === 'direct-api' && (
-          <SettingRow label="Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
-            <select
-              value={provider}
-              onChange={(e) => onProviderChange(e.target.value as ProviderName)}
-              style={{
-                padding: '6px 10px',
-                borderRadius: 8,
-                border: `1px solid ${borderColor}`,
-                backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
-                color: textColor,
-                fontSize: 13,
-                cursor: 'pointer',
-              }}
-            >
-              <option value="gemini">Gemini</option>
-              <option value="claude">Claude</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </SettingRow>
-        )}
-
-        {/* API Keys Section (only in API mode) */}
-        {mode === 'direct-api' && (
-          <>
-            <div
-              style={{
-                marginTop: 16,
-                paddingTop: 16,
-                borderTop: `1px solid ${borderColor}`,
-              }}
-            >
-              <button
-                onClick={() => setShowApiKeys(!showApiKeys)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px',
-                  backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
-                  border: `1px solid ${borderColor}`,
-                  borderRadius: 8,
-                  color: textColor,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-              >
-                <span>API Keys</span>
-                <span style={{ transform: showApiKeys ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
-                  ▼
-                </span>
-              </button>
-            </div>
-
-            {showApiKeys && (
-              <div style={{ marginTop: 12 }}>
-                <ApiKeyInput
-                  label="Gemini"
-                  value={geminiKey}
-                  onChange={setGeminiKey}
-                  onSave={() => handleSaveApiKey('gemini', geminiKey)}
-                  isDark={isDark}
-                  borderColor={borderColor}
-                  textColor={textColor}
-                />
-                <ApiKeyInput
-                  label="Claude"
-                  value={claudeKey}
-                  onChange={setClaudeKey}
-                  onSave={() => handleSaveApiKey('claude', claudeKey)}
-                  isDark={isDark}
-                  borderColor={borderColor}
-                  textColor={textColor}
-                />
-                <ApiKeyInput
-                  label="OpenAI"
-                  value={openaiKey}
-                  onChange={setOpenaiKey}
-                  onSave={() => handleSaveApiKey('openai', openaiKey)}
-                  isDark={isDark}
-                  borderColor={borderColor}
-                  textColor={textColor}
-                />
-              </div>
-            )}
-          </>
         )}
       </div>
     </div>
@@ -418,61 +272,4 @@ const ThemeIconToggle: React.FC<ThemeIconToggleProps> = ({ isDark, onToggle }) =
       </svg>
     )}
   </button>
-);
-
-interface ApiKeyInputProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  onSave: () => void;
-  isDark: boolean;
-  borderColor: string;
-  textColor: string;
-}
-
-const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
-  label,
-  value,
-  onChange,
-  onSave,
-  isDark,
-  borderColor,
-  textColor,
-}) => (
-  <div style={{ marginBottom: 10 }}>
-    <label style={{ fontSize: 12, color: textColor, display: 'block', marginBottom: 4 }}>
-      {label} API Key
-    </label>
-    <div style={{ display: 'flex', gap: 8 }}>
-      <input
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={`Enter ${label} API key...`}
-        style={{
-          flex: 1,
-          padding: '8px 10px',
-          fontSize: 12,
-          borderRadius: 6,
-          border: `1px solid ${borderColor}`,
-          backgroundColor: isDark ? '#1a1a1a' : '#ffffff',
-          color: textColor,
-        }}
-      />
-      <button
-        onClick={onSave}
-        style={{
-          padding: '8px 12px',
-          fontSize: 12,
-          borderRadius: 6,
-          border: 'none',
-          backgroundColor: '#FF6800',
-          color: 'white',
-          cursor: 'pointer',
-        }}
-      >
-        Save
-      </button>
-    </div>
-  </div>
 );

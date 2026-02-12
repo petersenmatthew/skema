@@ -75,22 +75,12 @@ export {
 } from './vision';
 
 // =============================================================================
-// AI Providers (SDK-based AI generation)
+// Execution Mode & Provider Types
 // =============================================================================
 
 export {
-  getProvider,
-  getAvailableProviders,
-  registerProvider,
-  getApiKeyFromEnv,
-  createGeminiProvider,
-  createClaudeProvider,
-  createOpenAIProvider,
-  type AIProvider,
   type ExecutionMode,
   type ProviderName,
-  type GenerateOptions,
-  type ProviderConfig,
 } from './providers';
 
 // =============================================================================

@@ -113,7 +113,6 @@ export const Skema: React.FC<SkemaProps> = ({
     revert,
     setMode,
     setProvider,
-    setApiKey,
   } = useDaemon({
     url: daemonUrl || 'ws://localhost:9999',
     autoConnect: daemonUrl !== null,
@@ -1053,7 +1052,6 @@ export const Skema: React.FC<SkemaProps> = ({
         availableProviders={daemonState.availableProviders}
         onModeChange={setMode}
         onProviderChange={setProvider}
-        onApiKeyChange={setApiKey}
         theme={theme}
         onThemeChange={setTheme}
       />

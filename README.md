@@ -33,7 +33,7 @@ bun add skema-core
 npm install skema-core
 ```
 
-### 2. Install an AI CLI (for Direct CLI mode)
+### 2. Install an AI CLI (for CLI mode)
 
 By default, Skema uses CLI agents that handle their own authentication (no API key needed):
 
@@ -46,14 +46,6 @@ npm install -g @anthropic-ai/claude-code
 ```
 
 Run the CLI once to complete its login/auth flow before using with Skema.
-
-> **Alternative: Direct API mode** -- If you prefer to use API keys instead of CLI tools, switch to "API" engine in the Skema settings panel and set your API key. Supports Gemini, Claude, and OpenAI. Add keys to `.env` or enter them in the settings panel:
->
-> ```env
-> GEMINI_API_KEY=your_api_key
-> ANTHROPIC_API_KEY=your_api_key
-> OPENAI_API_KEY=your_api_key
-> ```
 
 ### 3. Add Skema to your app
 
@@ -132,7 +124,7 @@ npx skema-core
 The daemon runs a WebSocket server that:
 - Connects to your browser (auto-connects to `ws://localhost:9999`)
 - Receives annotations from the Skema component
-- Calls AI APIs (Gemini, Claude, or OpenAI) to generate code changes
+- Calls AI CLI agents (Gemini or Claude) to generate code changes
 - Streams results back to the browser
 - Creates git snapshots for undo/revert
 
@@ -152,10 +144,9 @@ npx skema-core help                 # Show help
 
 ### Execution Modes
 
-Skema supports three execution modes, configurable via the settings panel or CLI:
+Skema supports two execution modes, configurable via the settings panel or CLI:
 
-- **Direct CLI** (default): Annotations are processed instantly using Gemini/Claude CLI agents. No API key needed -- the CLI tools handle their own auth. The CLI agents can autonomously read, write, and modify your files.
-- **Direct API**: Annotations are processed instantly using AI SDK calls. Requires an API key. Supports Gemini, Claude, and OpenAI.
+- **CLI** (default): Annotations are processed instantly using Gemini/Claude CLI agents. No API key needed -- the CLI tools handle their own auth. The CLI agents can autonomously read, write, and modify your files.
 - **MCP**: Annotations are **queued** instead of processed immediately. An external AI agent (Cursor, Claude Desktop, etc.) connects via MCP to retrieve and process them. The agent does the code generation -- Skema just provides the annotation context. No API keys needed in Skema.
 
 #### Setting up MCP Mode
@@ -238,7 +229,7 @@ bun run dev
 
 ## Architecture
 
-### Direct CLI Mode (default)
+### CLI Mode (default)
 
 ```
 ┌──────────────────┐     WebSocket     ┌─────────────────┐   spawns    ┌──────────────┐
@@ -253,18 +244,6 @@ bun run dev
 3. Daemon creates git snapshot, builds prompt, spawns CLI agent
 4. CLI agent autonomously reads/writes files to implement changes
 5. User can revert changes using git snapshots
-
-### Direct API Mode
-
-```
-┌──────────────────┐     WebSocket     ┌─────────────────┐     API      ┌──────────────┐
-│  Browser         │ ←───────────────→ │  Daemon         │ ──────────→  │  AI Provider  │
-│  (Skema overlay) │                   │  (skema-core)   │              │  (Gemini/     │
-└──────────────────┘                   └─────────────────┘              │  Claude/OpenAI)│
-                                                                       └──────────────┘
-```
-
-Same flow, but uses AI SDK calls instead of CLI tools. Requires API keys.
 
 ### MCP Mode
 

@@ -1,23 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Annotation } from '../types';
 
-// #region agent log
-fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useDaemon.ts:4',message:'Module loaded - checking imports',data:{useEffectType:typeof useEffect,useStateType:typeof useState,useRefType:typeof useRef,useCallbackType:typeof useCallback},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-// #endregion
-
 // =============================================================================
 // Types
 // =============================================================================
 
-export type ProviderName = 'gemini' | 'claude' | 'openai';
-export type ExecutionMode = 'direct-cli' | 'direct-api' | 'mcp';
+export type ProviderName = 'gemini' | 'claude';
+export type ExecutionMode = 'direct-cli' | 'mcp';
 
 export interface DaemonState {
   connected: boolean;
   provider: ProviderName;
   mode: ExecutionMode;
   availableProviders: ProviderName[];
-  availableCLIProviders: string[];
   availableModes: ExecutionMode[];
   cwd: string;
 }
@@ -35,8 +30,6 @@ export interface GenerateOptions {
   mode?: ExecutionMode;
   /** Override provider for this request */
   provider?: ProviderName;
-  /** API key to use */
-  apiKey?: string;
 }
 
 export interface UseDaemonOptions {
@@ -65,10 +58,6 @@ export interface UseDaemonReturn {
   setProvider: (provider: ProviderName) => Promise<boolean>;
   /** Switch execution mode */
   setMode: (mode: ExecutionMode) => Promise<boolean>;
-  /** Set API key (stored per session) */
-  setApiKey: (provider: ProviderName, apiKey: string) => Promise<boolean>;
-  /** Clear API key(s) */
-  clearApiKey: (provider?: ProviderName) => Promise<boolean>;
   /** Generate code from annotation (streaming) */
   generate: (
     annotation: Partial<Annotation> & { comment?: string },
@@ -97,17 +86,12 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     reconnectDelay = 2000,
   } = options;
 
-  // #region agent log
-  fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useDaemon.ts:hook-entry',message:'Hook called - checking hooks availability',data:{useEffectType:typeof useEffect,useStateType:typeof useState},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-  // #endregion
-
   const [state, setState] = useState<DaemonState>({
     connected: false,
     provider: 'gemini',
     mode: 'direct-cli',
     availableProviders: [],
-    availableCLIProviders: [],
-    availableModes: ['direct-cli', 'direct-api', 'mcp'],
+    availableModes: ['direct-cli', 'mcp'],
     cwd: '',
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -161,7 +145,6 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           provider: msg.provider || prev.provider,
           mode: msg.mode || prev.mode,
           availableProviders: msg.availableProviders || prev.availableProviders,
-          availableCLIProviders: msg.availableCLIProviders || prev.availableCLIProviders,
           availableModes: msg.availableModes || prev.availableModes,
           cwd: msg.cwd || prev.cwd,
         }));
@@ -326,28 +309,6 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     }
   }, [sendRequest]);
 
-  // Set API key
-  const setApiKey = useCallback(async (provider: ProviderName, apiKey: string): Promise<boolean> => {
-    try {
-      const response = await sendRequest<{ type: string }>('set-api-key', { provider, apiKey });
-      return response.type === 'api-key-set';
-    } catch (e) {
-      console.error('[useDaemon] Failed to set API key:', e);
-      return false;
-    }
-  }, [sendRequest]);
-
-  // Clear API key(s)
-  const clearApiKey = useCallback(async (provider?: ProviderName): Promise<boolean> => {
-    try {
-      const response = await sendRequest<{ type: string }>('clear-api-key', { provider });
-      return response.type === 'api-key-cleared' || response.type === 'api-keys-cleared';
-    } catch (e) {
-      console.error('[useDaemon] Failed to clear API key:', e);
-      return false;
-    }
-  }, [sendRequest]);
-
   // Generate code from annotation
   const generate = useCallback(async (
     annotation: Partial<Annotation> & { comment?: string },
@@ -378,7 +339,6 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
         // Include optional overrides
         ...(options?.mode && { mode: options.mode }),
         ...(options?.provider && { provider: options.provider }),
-        ...(options?.apiKey && { apiKey: options.apiKey }),
       }));
     });
   }, [nextId]);
@@ -412,9 +372,6 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
   }, [sendRequest]);
 
   // Auto-connect on mount
-  // #region agent log
-  fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useDaemon.ts:before-useEffect',message:'About to call useEffect',data:{useEffectType:typeof useEffect,useEffectValue:String(useEffect).slice(0,100)},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
-  // #endregion
   useEffect(() => {
     if (autoConnect) {
       connect();
@@ -433,8 +390,6 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     disconnect,
     setProvider,
     setMode,
-    setApiKey,
-    clearApiKey,
     generate,
     revert,
     readFile,

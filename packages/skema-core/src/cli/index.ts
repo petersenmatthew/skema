@@ -17,26 +17,20 @@ function printHelp() {
   console.log('  Options (for daemon):');
   console.log('    -p, --port <port>       Port number (default: 9999)');
   console.log('    -d, --dir <path>        Working directory');
-  console.log('    --provider <name>       Default AI provider (gemini|claude|openai)');
-  console.log('    --mode <mode>           Execution mode (direct-cli|direct-api|mcp)');
+  console.log('    --provider <name>       Default AI provider (gemini|claude)');
+  console.log('    --mode <mode>           Execution mode (direct-cli|mcp)');
   console.log('    --mcp                   Start as MCP server (stdio transport)');
   console.log('');
   console.log('  Execution Modes:');
   console.log('    direct-cli    Use Gemini/Claude CLI agents (default, no API key needed)');
-  console.log('    direct-api    Use AI SDKs directly with API keys');
   console.log('    mcp           Route through AI agent (Cursor, Claude Desktop)');
   console.log('');
   console.log('  Examples:');
   console.log('    npx skema-core');
   console.log('    npx skema-core --port 8080');
-  console.log('    npx skema-core --mode direct-api --provider openai');
+  console.log('    npx skema-core --provider claude');
   console.log('    npx skema-core --mcp');
   console.log('    npx skema-core init');
-  console.log('');
-  console.log('  Environment Variables:');
-  console.log('    GEMINI_API_KEY      For Gemini API access');
-  console.log('    ANTHROPIC_API_KEY   For Claude API access');
-  console.log('    OPENAI_API_KEY      For OpenAI API access');
   console.log('');
   console.log('  Note: After installing skema-core, you can also use "skema" directly.');
   console.log('');
@@ -45,7 +39,7 @@ function printHelp() {
 interface ParsedConfig {
   port?: number;
   cwd?: string;
-  defaultProvider?: 'gemini' | 'claude' | 'openai';
+  defaultProvider?: 'gemini' | 'claude';
   defaultMode?: ExecutionMode;
   mcp?: boolean;
 }
@@ -64,7 +58,7 @@ function parseArgs(args: string[]): ParsedConfig {
       config.cwd = next;
       i++;
     } else if (arg === '--provider') {
-      config.defaultProvider = next as 'gemini' | 'claude' | 'openai';
+      config.defaultProvider = next as 'gemini' | 'claude';
       i++;
     } else if (arg === '--mode') {
       config.defaultMode = next as ExecutionMode;
