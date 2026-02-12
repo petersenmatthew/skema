@@ -968,24 +968,27 @@ export const Skema: React.FC<SkemaProps> = ({
         `}</style>
       )}
       
-      {/* Style panel positioning when visible */}
+      {/* Style panel positioning when visible - directly above the bottom-right settings button */}
       {isStylePanelOpen && (
         <style>{`
           .tlui-style-panel__wrapper {
-            top: 68px !important;
+            position: fixed !important;
+            bottom: 68px !important;
             right: 16px !important;
+            top: auto !important;
+            left: auto !important;
           }
         `}</style>
       )}
 
-      {/* Floating Settings Button - Top Right */}
+      {/* Floating Settings Button - Bottom Right */}
       {isToolbarExpanded && (
         <button
           onClick={() => setIsStylePanelOpen(prev => !prev)}
           title={isStylePanelOpen ? "Hide style settings" : "Show style settings"}
           style={{
             position: 'fixed',
-            top: 16,
+            bottom: 16,
             right: 16,
             width: 44,
             height: 44,

@@ -59,13 +59,17 @@ export const skemaOverrides: TLUiOverrides = {
 };
 
 /**
- * CSS to hide tldraw's "Back to Content" button
+ * CSS to hide tldraw's UI elements we don't need
  */
 export const skemaHiddenUiStyles = `
   .tlui-button[data-testid="back-to-content"],
   .tlui-offscreen-indicator,
   [class*="back-to-content"],
-  .tl-offscreen-indicator {
+  .tl-offscreen-indicator,
+  /* Hide "made with tldraw" watermark */
+  .tlui-watermark,
+  .tlui-watermark__inner,
+  [class*="watermark"] {
     display: none !important;
   }
 `;
