@@ -1,6 +1,6 @@
 {
   "name": "skema-core",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Drawing-based website development overlay using tldraw",
   "author": "Justin Wu",
   "license": "MIT",
@@ -65,6 +65,7 @@
     "@google/generative-ai": "^0.24.1",
     "dotenv": "^16.4.5",
     "framer-motion": "^12.34.0",
+    "skema-core": "^0.1.2",
     "tldraw": "^3.15.5",
     "ws": "^8.18.0"
   },
