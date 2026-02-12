@@ -61,7 +61,53 @@ Get your API key from [Google AI Studio](https://aistudio.google.com/apikey) or 
 
 ### 4. Add Skema to your app
 
-Add the Skema component to your app (development only):
+#### Next.js App Router (Next.js 13+)
+
+In Next.js App Router, components are Server Components by default. Since Skema uses tldraw (which requires browser APIs), you need to wrap it in a **Client Component**.
+
+**Step 1:** Create a Client Component wrapper:
+
+```tsx
+// src/components/SkemaWrapper.tsx
+"use client";
+
+import dynamic from "next/dynamic";
+
+const Skema = dynamic(() => import("skema-core").then((mod) => mod.Skema), {
+  ssr: false,
+});
+
+export default function SkemaWrapper() {
+  if (process.env.NODE_ENV !== "development") {
+    return null;
+  }
+  return <Skema />;
+}
+```
+
+**Step 2:** Import the wrapper in your layout or page:
+
+```tsx
+// src/app/layout.tsx
+import SkemaWrapper from "@/components/SkemaWrapper";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <SkemaWrapper />
+      </body>
+    </html>
+  );
+}
+```
+
+> **Why is this needed?** The `ssr: false` option with `next/dynamic` is only allowed in Client Components. Since `layout.tsx` is a Server Component by default, you must create a separate Client Component wrapper.
+
+#### Next.js Pages Router / Other React Apps
+
+For Pages Router or other React frameworks, you can use Skema directly:
 
 ```tsx
 import { Skema } from 'skema-core';
