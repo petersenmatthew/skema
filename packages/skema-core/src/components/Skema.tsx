@@ -79,6 +79,7 @@ export const Skema: React.FC<SkemaProps> = ({
   const [internalIsProcessing, setInternalIsProcessing] = useState(false);
   const [isToolbarExpanded, setIsToolbarExpanded] = useState(false);
   const [isStylePanelOpen, setIsStylePanelOpen] = useState(false);
+  const [currentToolId, setCurrentToolId] = useState<string>('select');
 
   // Theme state (persisted in localStorage)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -935,6 +936,13 @@ export const Skema: React.FC<SkemaProps> = ({
         lastBrush = next.brush;
       }
     });
+
+    // Track current tool changes for conditional UI (e.g. style panel visibility)
+    const handleToolChange = () => {
+      const toolId = editor.getCurrentToolId();
+      setCurrentToolId((prev) => (prev !== toolId ? toolId : prev));
+    };
+    editor.sideEffects.registerAfterChangeHandler('instance', handleToolChange);
   }, [handleDOMSelect, handleBrushSelection, handleLassoSelection, handleMultiDOMSelect, handleDrawingAnnotation, theme]);
 
   // =============================================================================
@@ -986,7 +994,7 @@ export const Skema: React.FC<SkemaProps> = ({
       {/* Hide tldraw UI elements */}
       <style>{skemaHiddenUiStyles}</style>
       
-      {/* Style panel - only visible when toolbar is expanded, positioned in top right corner */}
+      {/* Style panel - only visible for draw/geo tools, positioned in top right corner */}
       <style>{`
         .tlui-style-panel__wrapper {
           position: fixed !important;
@@ -994,7 +1002,7 @@ export const Skema: React.FC<SkemaProps> = ({
           right: 16px !important;
           bottom: auto !important;
           left: auto !important;
-          ${isToolbarExpanded ? '' : 'display: none !important;'}
+          ${isToolbarExpanded && (currentToolId === 'draw' || currentToolId === 'geo') ? '' : 'display: none !important;'}
         }
       `}</style>
 
