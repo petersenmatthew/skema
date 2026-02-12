@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Annotation } from '../types';
 
+// #region agent log
+fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useDaemon.ts:4',message:'Module loaded - checking imports',data:{useEffectType:typeof useEffect,useStateType:typeof useState,useRefType:typeof useRef,useCallbackType:typeof useCallback},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+// #endregion
+
 // =============================================================================
 // Types
 // =============================================================================
@@ -93,6 +97,10 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     autoReconnect = true,
     reconnectDelay = 2000,
   } = options;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useDaemon.ts:hook-entry',message:'Hook called - checking hooks availability',data:{useEffectType:typeof useEffect,useStateType:typeof useState},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+  // #endregion
 
   const [state, setState] = useState<DaemonState>({
     connected: false,
@@ -386,6 +394,9 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
   }, [sendRequest]);
 
   // Auto-connect on mount
+  // #region agent log
+  fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useDaemon.ts:before-useEffect',message:'About to call useEffect',data:{useEffectType:typeof useEffect,useEffectValue:String(useEffect).slice(0,100)},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+  // #endregion
   useEffect(() => {
     if (autoConnect) {
       connect();

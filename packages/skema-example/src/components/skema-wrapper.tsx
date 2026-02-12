@@ -3,6 +3,10 @@
 import { Skema, useDaemon, type Annotation, type AIStreamEvent } from "skema-core";
 import { useCallback, useRef, useState, useEffect } from "react";
 
+// #region agent log
+fetch('http://127.0.0.1:7245/ingest/ff72e104-b926-41a9-9d2e-c16c34ebe4bb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'skema-wrapper.tsx:module',message:'skema-wrapper module loaded',data:{useDaemonType:typeof useDaemon,SkemaType:typeof Skema},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+// #endregion
+
 export function SkemaWrapper() {
   // Track annotation IDs to their change IDs for reverting
   const annotationChangesRef = useRef<Map<string, string>>(new Map());
