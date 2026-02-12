@@ -1,6 +1,5 @@
 // =============================================================================
 // Element Identification Utilities
-// Adapted from Agentation with modifications for Skema
 // =============================================================================
 
 import type { BoundingBox, DOMSelection, ElementStyles, NearbyElement, ProjectStyleContext } from '../types';

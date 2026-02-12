@@ -68,7 +68,6 @@ export const Skema: React.FC<SkemaProps> = ({
   // =============================================================================
   // State
   // =============================================================================
-  const [isActive, setIsActive] = useState(enabled);
   const [annotations, setAnnotations] = useState<Annotation[]>(initialAnnotations);
   const [domSelections, setDomSelections] = useState<DOMSelection[]>([]);
   const [pendingAnnotation, setPendingAnnotation] = useState<PendingAnnotation | null>(null);
@@ -170,24 +169,24 @@ export const Skema: React.FC<SkemaProps> = ({
   // Custom Hooks
   // =============================================================================
 
-  // Keyboard shortcut to toggle overlay
+  // Keyboard shortcut to toggle toolbar expansion
   useKeyboardShortcuts({
-    onToggle: useCallback(() => setIsActive(prev => !prev), []),
+    onToggle: useCallback(() => setIsToolbarExpanded(prev => !prev), []),
     shortcut: toggleShortcut,
   });
 
   // Scroll sync between page and tldraw camera
-  const scrollOffset = useScrollSync(isActive, editorRef);
+  const scrollOffset = useScrollSync(isToolbarExpanded, editorRef);
 
   // Intercept wheel events to scroll page instead of panning tldraw
-  useWheelIntercept(isActive);
+  useWheelIntercept(isToolbarExpanded);
 
   // Persist shapes when toggling overlay off/on
-  useShapePersistence(isActive, editorRef);
+  useShapePersistence(isToolbarExpanded, editorRef);
 
   // Scribble gesture detection for delete
   useScribbleDelete({
-    isActive,
+    isActive: isToolbarExpanded,
     editorRef,
     setAnnotations,
     setScribbleToast,
@@ -220,7 +219,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
   // Recalculate bounding boxes on window resize
   useEffect(() => {
-    if (!isActive) return;
+    if (!isToolbarExpanded) return;
 
     const handleResize = () => {
       // Update domSelections bounding boxes
@@ -327,7 +326,7 @@ export const Skema: React.FC<SkemaProps> = ({
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [isActive]);
+  }, [isToolbarExpanded]);
 
   // =============================================================================
   // Helper Functions
@@ -659,6 +658,9 @@ export const Skema: React.FC<SkemaProps> = ({
       onProcessingCancel?.();
     }
     setProcessingBoundingBox(null);
+    if (editorRef.current) {
+      editorRef.current.setSelectedShapes([]);
+    }
     setTimeout(() => {
       setPendingAnnotation(null);
       setPendingExiting(false);
@@ -914,7 +916,7 @@ export const Skema: React.FC<SkemaProps> = ({
   // =============================================================================
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!isToolbarExpanded) return;
 
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
@@ -935,13 +937,13 @@ export const Skema: React.FC<SkemaProps> = ({
 
     document.addEventListener('pointerdown', handlePointerDown, { capture: true });
     return () => document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
-  }, [isActive, pendingAnnotation, handleAnnotationCancel]);
+  }, [isToolbarExpanded, pendingAnnotation, handleAnnotationCancel]);
 
   // =============================================================================
   // Render
   // =============================================================================
 
-  if (!isActive) {
+  if (!enabled) {
     return null;
   }
 
@@ -1024,12 +1026,12 @@ export const Skema: React.FC<SkemaProps> = ({
         </button>
       )}
 
-      {/* tldraw overlay */}
+      {/* tldraw overlay - only intercept events when toolbar is expanded */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
-          pointerEvents: 'auto',
+          pointerEvents: isToolbarExpanded ? 'auto' : 'none',
         }}
       >
         <Tldraw
@@ -1041,8 +1043,9 @@ export const Skema: React.FC<SkemaProps> = ({
           inferDarkMode={false}
           options={{ maxPages: 1 }}
         >
-          <SkemaToolbar 
-            onExpandedChange={setIsToolbarExpanded} 
+          <SkemaToolbar
+            isExpanded={isToolbarExpanded}
+            onExpandedChange={setIsToolbarExpanded}
             onStylePanelChange={setIsStylePanelOpen}
           />
         </Tldraw>
@@ -1100,7 +1103,7 @@ export const Skema: React.FC<SkemaProps> = ({
                 ? 'What does this drawing mean?'
                 : pendingAnnotation.isMultiSelect
                   ? 'What should change about these elements?'
-                  : 'What should change?'
+                  : 'Write your changes'
             }
             onSubmit={handleAnnotationSubmit}
             onCancel={handleAnnotationCancel}
@@ -1125,31 +1128,6 @@ export const Skema: React.FC<SkemaProps> = ({
         onClear={handleClear}
         onExport={handleExport}
       />
-
-      {/* Toggle indicator */}
-      <div
-        data-skema="toggle-hint"
-        style={{
-          position: 'fixed',
-          bottom: 16,
-          left: 16,
-          padding: '8px 12px',
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          color: 'white',
-          borderRadius: '6px',
-          fontSize: '12px',
-          pointerEvents: 'none',
-          zIndex: zIndex + 1,
-        }}
-      >
-        Press <kbd style={{
-          backgroundColor: 'rgba(255,255,255,0.2)',
-          padding: '2px 6px',
-          borderRadius: '3px',
-          marginLeft: '4px',
-          marginRight: '4px',
-        }}>⌘⇧E</kbd> to toggle Skema
-      </div>
 
       {/* Scribble-delete toast notification */}
       {scribbleToast && (

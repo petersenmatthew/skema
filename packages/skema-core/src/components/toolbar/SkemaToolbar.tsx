@@ -357,17 +357,19 @@ const SettingsButton: React.FC<SettingsButtonProps> = ({ isActive, onClick, inde
 // =============================================================================
 
 export interface SkemaToolbarProps {
+    isExpanded?: boolean;
     onExpandedChange?: (expanded: boolean) => void;
     onStylePanelChange?: (open: boolean) => void;
 }
 
-export const SkemaToolbar: React.FC<SkemaToolbarProps> = ({ onExpandedChange, onStylePanelChange }) => {
+export const SkemaToolbar: React.FC<SkemaToolbarProps> = ({ isExpanded: controlledExpanded, onExpandedChange, onStylePanelChange }) => {
     const editor = useEditor();
     const tools = useTools();
     const shapesButtonRef = useRef<HTMLButtonElement>(null);
 
-    // Collapse/expand state
-    const [isExpanded, setIsExpanded] = useState(false);
+    // Collapse/expand state (use controlled prop if provided)
+    const [internalExpanded, setInternalExpanded] = useState(false);
+    const isExpanded = controlledExpanded !== undefined ? controlledExpanded : internalExpanded;
     const [isLogoHovered, setIsLogoHovered] = useState(false);
     const [isShapePickerOpen, setIsShapePickerOpen] = useState(false);
     const [isStylePanelOpen, setIsStylePanelOpen] = useState(false);
@@ -380,7 +382,7 @@ export const SkemaToolbar: React.FC<SkemaToolbarProps> = ({ onExpandedChange, on
     const isGeoSelected = useIsToolSelected(tools['geo']);
 
     const handleExpand = (expanded: boolean) => {
-        setIsExpanded(expanded);
+        setInternalExpanded(expanded);
         onExpandedChange?.(expanded);
         // Close style panel when collapsing
         if (!expanded) {
