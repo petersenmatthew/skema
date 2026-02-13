@@ -14,6 +14,13 @@ export interface ProviderStatus {
   message: string;
 }
 
+export interface AnnotationCounts {
+  pending: number;
+  acknowledged: number;
+  resolved: number;
+  dismissed: number;
+}
+
 export interface DaemonState {
   connected: boolean;
   provider: ProviderName;
@@ -22,6 +29,8 @@ export interface DaemonState {
   availableModes: ExecutionMode[];
   providerStatus: Record<ProviderName, ProviderStatus>;
   cwd: string;
+  mcpServerConnected: boolean;
+  annotationCounts: AnnotationCounts;
 }
 
 export interface AIStreamEvent {
@@ -108,6 +117,8 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     availableModes: ['direct-cli', 'mcp'],
     providerStatus: defaultProviderStatus,
     cwd: '',
+    mcpServerConnected: false,
+    annotationCounts: { pending: 0, acknowledged: 0, resolved: 0, dismissed: 0 },
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +174,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           availableModes: msg.availableModes || prev.availableModes,
           providerStatus: msg.providerStatus || prev.providerStatus,
           cwd: msg.cwd || prev.cwd,
+          mcpServerConnected: msg.mcpServerConnected ?? prev.mcpServerConnected,
         }));
         setError(null);
         return;
@@ -214,6 +226,24 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
       if (msg.type === 'annotation-status-changed') {
         // This is a broadcast - no pending request to resolve
         // Components can listen for this via state updates
+        return;
+      }
+
+      // Handle MCP server connection status
+      if (msg.type === 'mcp-server-status') {
+        setState((prev) => ({
+          ...prev,
+          mcpServerConnected: msg.connected,
+        }));
+        return;
+      }
+
+      // Handle MCP annotation count updates
+      if (msg.type === 'mcp-annotation-counts') {
+        setState((prev) => ({
+          ...prev,
+          annotationCounts: msg.counts,
+        }));
         return;
       }
 

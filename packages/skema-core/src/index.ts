@@ -25,6 +25,7 @@ export type {
   ExecutionMode,
   ProviderName,
   ProviderStatus,
+  AnnotationCounts,
   AIStreamEvent,
 } from './hooks/useDaemon';
 

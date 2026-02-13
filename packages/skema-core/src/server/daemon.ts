@@ -70,6 +70,19 @@ let currentMode: ExecutionMode = 'direct-cli';
 // Store annotation snapshots for undo (same as gemini-cli.ts)
 const annotationSnapshots = new Map<string, string>();
 
+// Track MCP server connection (separate from browser clients)
+let mcpServerClient: WebSocket | null = null;
+
+function getAnnotationCounts() {
+  const all = getAllAnnotations();
+  return {
+    pending: all.filter((a) => a.status === 'pending').length,
+    acknowledged: all.filter((a) => a.status === 'acknowledged').length,
+    resolved: all.filter((a) => a.status === 'resolved').length,
+    dismissed: all.filter((a) => a.status === 'dismissed').length,
+  };
+}
+
 // =============================================================================
 // Git Snapshot Functions (for undo support)
 // =============================================================================
@@ -214,13 +227,20 @@ const handlers: Record<string, MessageHandler> = {
     if (requestMode === 'mcp') {
       const comment = annotation.comment || '';
       const stored = queueAnnotation(annotation as Annotation, comment);
-      
+      const counts = getAnnotationCounts();
+
       sendMessage(ws, {
         id: msg.id,
         type: 'annotation-queued',
         success: true,
         annotationId: stored.annotation.id,
         pendingCount: getPendingCount(),
+        annotationCounts: counts,
+      });
+      // Broadcast updated counts to all browser clients
+      broadcastToClients({
+        type: 'mcp-annotation-counts',
+        counts,
       });
       return;
     }
@@ -408,11 +428,13 @@ const handlers: Record<string, MessageHandler> = {
       return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
     }
     // Notify browser clients
+    const counts = getAnnotationCounts();
     broadcastToClients({
       type: 'annotation-status-changed',
       annotationId: id,
       status: 'acknowledged',
     });
+    broadcastToClients({ type: 'mcp-annotation-counts', counts });
     return {
       id: msg.id,
       type: 'annotation-acknowledged',
@@ -428,12 +450,14 @@ const handlers: Record<string, MessageHandler> = {
       return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
     }
     // Notify browser clients
+    const counts = getAnnotationCounts();
     broadcastToClients({
       type: 'annotation-status-changed',
       annotationId: id,
       status: 'resolved',
       summary,
     });
+    broadcastToClients({ type: 'mcp-annotation-counts', counts });
     return {
       id: msg.id,
       type: 'annotation-resolved',
@@ -450,12 +474,14 @@ const handlers: Record<string, MessageHandler> = {
       return { id: msg.id, type: 'error', error: `Annotation not found: ${id}` };
     }
     // Notify browser clients
+    const counts = getAnnotationCounts();
     broadcastToClients({
       type: 'annotation-status-changed',
       annotationId: id,
       status: 'dismissed',
       reason,
     });
+    broadcastToClients({ type: 'mcp-annotation-counts', counts });
     return {
       id: msg.id,
       type: 'annotation-dismissed',
@@ -550,6 +576,23 @@ const handlers: Record<string, MessageHandler> = {
   },
 
   // -------------------------------------------------------------------------
+  // MCP Server Identification
+  // -------------------------------------------------------------------------
+  identify: async (msg, ws) => {
+    if (msg.client === 'mcp-server') {
+      mcpServerClient = ws;
+      console.log('[Daemon] MCP server identified and connected');
+      // Notify browser clients
+      broadcastToClients({
+        type: 'mcp-server-status',
+        connected: true,
+      });
+      return { id: msg.id, type: 'identified', client: 'mcp-server' };
+    }
+    return { id: msg.id, type: 'identified', client: 'unknown' };
+  },
+
+  // -------------------------------------------------------------------------
   // Status
   // -------------------------------------------------------------------------
   ping: async (msg) => {
@@ -561,6 +604,7 @@ const handlers: Record<string, MessageHandler> = {
       cwd: workingDirectory,
       availableProviders: getCLIProviders(),
       availableModes: ['direct-cli', 'mcp'] as ExecutionMode[],
+      mcpServerConnected: mcpServerClient?.readyState === WebSocket.OPEN,
     };
   },
 };
@@ -629,6 +673,7 @@ function handleConnection(ws: WebSocket) {
     availableModes: ['direct-cli', 'mcp'] as ExecutionMode[],
     pendingAnnotations: currentMode === 'mcp' ? getPendingCount() : 0,
     providerStatus: getAllProviderStatuses(),
+    mcpServerConnected: mcpServerClient?.readyState === WebSocket.OPEN,
   });
 
   ws.on('message', async (data) => {
@@ -663,6 +708,16 @@ function handleConnection(ws: WebSocket) {
   ws.on('close', () => {
     console.log('[Daemon] Client disconnected');
     connectedClients.delete(ws);
+
+    // If the MCP server disconnected, notify browser clients
+    if (ws === mcpServerClient) {
+      mcpServerClient = null;
+      console.log('[Daemon] MCP server disconnected');
+      broadcastToClients({
+        type: 'mcp-server-status',
+        connected: false,
+      });
+    }
   });
 
   ws.on('error', (error) => {

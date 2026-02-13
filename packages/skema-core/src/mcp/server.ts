@@ -27,7 +27,7 @@ import WebSocket from 'ws';
 // Configuration
 // =============================================================================
 
-const DAEMON_PORT = parseInt(process.env.SKEMA_PORT || '54321', 10);
+const DAEMON_PORT = parseInt(process.env.SKEMA_PORT || '9999', 10);
 const DAEMON_URL = `ws://localhost:${DAEMON_PORT}`;
 
 // =============================================================================
@@ -55,6 +55,12 @@ function connectToDaemon(): Promise<void> {
     daemonWs.on('open', () => {
       daemonConnected = true;
       console.error('[Skema MCP] Connected to daemon at', DAEMON_URL);
+      // Identify ourselves as the MCP server
+      daemonWs!.send(JSON.stringify({
+        id: `mcp-identify-${Date.now()}`,
+        type: 'identify',
+        client: 'mcp-server',
+      }));
       resolve();
     });
 

@@ -3,7 +3,7 @@
 // =============================================================================
 
 import React from 'react';
-import type { ExecutionMode, ProviderName, ProviderStatus } from '../../hooks/useDaemon';
+import type { ExecutionMode, ProviderName, ProviderStatus, AnnotationCounts } from '../../hooks/useDaemon';
 import logoDarkUrl from '../../assets/logo-dark';
 import logoLightUrl from '../../assets/logo-light';
 
@@ -20,6 +20,9 @@ export interface SettingsPanelProps {
   provider: ProviderName | string;
   availableProviders: string[];
   providerStatus: Record<ProviderName, ProviderStatus>;
+  // MCP state
+  mcpServerConnected: boolean;
+  annotationCounts: AnnotationCounts;
   // Actions
   onModeChange: (mode: ExecutionMode) => Promise<boolean>;
   onProviderChange: (provider: ProviderName) => Promise<boolean>;
@@ -37,6 +40,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   provider,
   availableProviders,
   providerStatus,
+  mcpServerConnected,
+  annotationCounts,
   onModeChange,
   onProviderChange,
   theme,
@@ -117,25 +122,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             : 'Annotations processed instantly via CLI agents'}
         </div>
 
-        {/* MCP Mode Info */}
+        {/* MCP Status Panel */}
         {mode === 'mcp' && (
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 10,
-              backgroundColor: isDark ? '#1a2332' : '#f0f7ff',
-              border: `1px solid ${isDark ? '#2a3a4a' : '#d0e4ff'}`,
-              marginBottom: 12,
-            }}
-          >
-            <div style={{ fontSize: 12, fontWeight: 600, color: isDark ? '#7bb8ff' : '#2563eb', marginBottom: 6 }}>
-              MCP Mode
-            </div>
-            <div style={{ fontSize: 11, color: isDark ? '#8899aa' : '#555', lineHeight: 1.5 }}>
-              Annotations are saved and picked up by your AI agent (Cursor, Claude Desktop, etc.) 
-              via the Skema MCP server. No CLI tools needed -- your agent handles the generation.
-            </div>
-          </div>
+          <McpStatusPanel
+            mcpServerConnected={mcpServerConnected}
+            annotationCounts={annotationCounts}
+            isDark={isDark}
+            mutedColor={mutedColor}
+          />
         )}
 
         {/* CLI Provider Toggle (only in CLI mode) */}
@@ -232,6 +226,111 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ options, value, onChange, i
 };
 
 // =============================================================================
+// MCP Status Panel
+// =============================================================================
+
+interface McpStatusPanelProps {
+  mcpServerConnected: boolean;
+  annotationCounts: AnnotationCounts;
+  isDark: boolean;
+  mutedColor: string;
+}
+
+const McpStatusPanel: React.FC<McpStatusPanelProps> = ({
+  mcpServerConnected,
+  annotationCounts,
+  isDark,
+  mutedColor,
+}) => {
+  const serverDotColor = mcpServerConnected ? '#10b981' : '#ef4444';
+  const serverStatusText = mcpServerConnected ? 'Connected' : 'Not detected';
+  const totalActive = annotationCounts.pending + annotationCounts.acknowledged;
+
+  return (
+    <div
+      style={{
+        borderRadius: 10,
+        backgroundColor: isDark ? '#1a2332' : '#f0f7ff',
+        border: `1px solid ${isDark ? '#2a3a4a' : '#d0e4ff'}`,
+        marginBottom: 12,
+        overflow: 'hidden',
+      }}
+    >
+      {/* MCP Server Status */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          padding: '10px 14px',
+          borderBottom: totalActive > 0 ? `1px solid ${isDark ? '#2a3a4a' : '#d0e4ff'}` : 'none',
+        }}
+      >
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            backgroundColor: serverDotColor,
+            flexShrink: 0,
+            boxShadow: `0 0 6px ${serverDotColor}60`,
+          }}
+        />
+        <span style={{ fontSize: 12, color: isDark ? '#c8d6e5' : '#333', fontWeight: 500 }}>
+          MCP Server
+        </span>
+        <span
+          style={{
+            marginLeft: 'auto',
+            fontSize: 11,
+            color: serverDotColor,
+            fontWeight: 500,
+          }}
+        >
+          {serverStatusText}
+        </span>
+      </div>
+
+      {/* Annotation Pipeline Counts (only when there are active annotations) */}
+      {totalActive > 0 && (
+        <div style={{ padding: '8px 14px 10px' }}>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <CountBadge label="Queued" count={annotationCounts.pending} color="#f59e0b" isDark={isDark} />
+            <CountBadge label="In Progress" count={annotationCounts.acknowledged} color="#3b82f6" isDark={isDark} />
+            <CountBadge label="Done" count={annotationCounts.resolved} color="#10b981" isDark={isDark} />
+          </div>
+        </div>
+      )}
+
+      {/* Hint when no MCP server */}
+      {!mcpServerConnected && (
+        <div style={{ padding: '0 14px 10px', fontSize: 10, color: mutedColor, lineHeight: 1.4 }}>
+          Configure the Skema MCP server in your AI agent (Cursor, Claude Desktop, etc.) to connect.
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =============================================================================
+// Count Badge (for annotation pipeline)
+// =============================================================================
+
+interface CountBadgeProps {
+  label: string;
+  count: number;
+  color: string;
+  isDark: boolean;
+}
+
+const CountBadge: React.FC<CountBadgeProps> = ({ label, count, color, isDark }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+    <span style={{ fontSize: 16, fontWeight: 600, color, lineHeight: 1 }}>{count}</span>
+    <span style={{ fontSize: 9, color: isDark ? '#778899' : '#888', marginTop: 2 }}>{label}</span>
+  </div>
+);
+
+// =============================================================================
 // Provider Status Indicator (single selected provider)
 // =============================================================================
 
@@ -265,7 +364,7 @@ const ProviderStatusIndicator: React.FC<ProviderStatusIndicatorProps> = ({ provi
     bgTint = isDark ? '#ef444410' : '#ef444410';
   }
 
-  const label = provider === 'gemini' ? 'Gemini CLI' : 'Claude CLI';
+  const label = provider === 'gemini' ? 'Gemini CLI' : 'Claude Code';
 
   return (
     <div
