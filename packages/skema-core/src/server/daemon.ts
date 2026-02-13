@@ -355,12 +355,14 @@ const handlers: Record<string, MessageHandler> = {
 
     const { process: aiProcess, events } = spawnAICLI(prompt, config);
 
-    // Stream events back (log CLI output in daemon terminal)
+    // Stream events back (log CLI output in daemon terminal with colored prefix)
+    const prefixGreen = '\x1b[32m'; // ANSI green (similar to browser #10b981)
+    const reset = '\x1b[0m';
     for await (const event of events) {
       if (event.type === 'text' && event.content) {
-        console.log(`[Skema ${requestProvider}] ${event.content}`);
+        console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
       } else if (event.type === 'error' && event.content) {
-        console.error(`[Skema ${requestProvider}] ${event.content}`);
+        console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
       }
       sendMessage(ws, {
         id: msg.id,
