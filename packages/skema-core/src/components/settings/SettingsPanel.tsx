@@ -102,15 +102,13 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const [visionApiKey, setVisionApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
 
-  const apiKeyPlaceholder = '•••••••••••••••••••••••••••••••••••••';
-
   useEffect(() => {
     if (isOpen) {
       const storedProvider = getStoredVisionProvider();
       setVisionProvider(storedProvider);
       setVisionModel(getStoredVisionModel() || VISION_PROVIDER_DEFAULT_MODEL[storedProvider]);
       const storedKey = getStoredVisionApiKey(storedProvider);
-      setVisionApiKey(storedKey ? apiKeyPlaceholder : '');
+      setVisionApiKey(storedKey ?? '');
     }
   }, [isOpen]);
 
@@ -120,7 +118,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     setStoredVisionProvider(newProvider);
     // Load per-provider API key
     const storedKey = getStoredVisionApiKey(newProvider);
-    setVisionApiKey(storedKey ? apiKeyPlaceholder : '');
+    setVisionApiKey(storedKey ?? '');
     setShowApiKey(false);
     // Reset model to default for new provider
     const defaultModel = VISION_PROVIDER_DEFAULT_MODEL[newProvider];
@@ -137,22 +135,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const handleVisionApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
     setVisionApiKey(v);
-    if (v === '') setStoredVisionApiKey(visionProvider, '');
-    else if (v !== apiKeyPlaceholder) setStoredVisionApiKey(visionProvider, v);
-  };
-
-  const handleVisionApiKeyBlur = () => {
-    if (visionApiKey === '' || visionApiKey === apiKeyPlaceholder) {
-      setStoredVisionApiKey(visionProvider, '');
-      if (visionApiKey === apiKeyPlaceholder) setVisionApiKey('');
-    }
-  };
-
-  const handleVisionApiKeyFocus = () => {
-    if (visionApiKey === apiKeyPlaceholder) {
-      const stored = getStoredVisionApiKey(visionProvider);
-      setVisionApiKey(stored ?? '');
-    }
+    setStoredVisionApiKey(visionProvider, v || '');
   };
 
   if (!isOpen) return null;
@@ -229,8 +212,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               placeholder=""
               value={visionApiKey}
               onChange={handleVisionApiKeyChange}
-              onBlur={handleVisionApiKeyBlur}
-              onFocus={handleVisionApiKeyFocus}
               autoComplete="off"
               style={{
                 width: '100%',
