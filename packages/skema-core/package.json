@@ -1,6 +1,6 @@
 {
   "name": "skema-core",
-  "version": "0.2.0",
+  "version": "2.1.0",
   "description": "Drawing-based website development overlay using tldraw",
   "author": "Justin Wu",
   "license": "MIT",
