@@ -195,7 +195,10 @@ export const Skema: React.FC<SkemaProps> = ({
 
   // Keyboard shortcut to toggle toolbar expansion
   useKeyboardShortcuts({
-    onToggle: useCallback(() => setIsToolbarExpanded(prev => !prev), []),
+    onToggle: useCallback(() => {
+      setIsToolbarExpanded(prev => !prev);
+      setIsStylePanelOpen(false);
+    }, []),
     shortcut: toggleShortcut,
   });
 
