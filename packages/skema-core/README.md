@@ -18,6 +18,7 @@ Skema is an npm package that provides a tldraw-powered drawing overlay for annot
 ## Features
 
 - **Drawing Overlay**: Use tldraw's powerful drawing tools directly on your website
+- **DOM Selection**: Double-click on the canvas to select the element under the cursor (or use brush/lasso selection)
 - **AI Code Generation**: Annotations are sent to AI (Gemini or Claude) which edits your code
 - **Undo/Revert**: Git-based snapshots let you revert changes per-annotation
 - **Non-Invasive**: Transparent overlay that doesn't interfere with your page when not in use
@@ -111,6 +112,15 @@ npx skema-core help                 # Show help
 ## Keyboard Shortcuts
 
 - **⌘⇧E** (Cmd+Shift+E / Ctrl+Shift+E): Toggle Skema overlay
+- **s**: Select tool
+- **d**: Draw tool
+- **l**: Lasso select
+- **e**: Eraser
+- **r**: Rectangle (shapes)
+- **o**: Ellipse (shapes)
+- **Escape**: Close popup or shape picker
+
+To select a DOM element for annotation, double-click on the canvas over that element.
 
 ## Props
 

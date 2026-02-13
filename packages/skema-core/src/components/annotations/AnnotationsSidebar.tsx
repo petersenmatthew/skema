@@ -106,7 +106,7 @@ export const AnnotationsSidebar: React.FC<AnnotationsSidebarProps> = ({
             <div style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 200px)' }}>
                 {annotations.length === 0 ? (
                     <div style={{ padding: '16px', color: '#6b7280', fontSize: '13px' }}>
-                        No annotations yet. Use select, draw, or lasso to annotate.
+                        No annotations yet. Double-click to select an element, or use draw/lasso to annotate.
                     </div>
                 ) : (
                     annotations.map((annotation) => (
