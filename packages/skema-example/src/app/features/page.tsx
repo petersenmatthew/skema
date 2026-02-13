@@ -1,46 +1,46 @@
 import { Header } from "@/components/docs/header"
 import { ThemedLogo } from "@/components/docs/themed-logo"
 
-const features = [
+const demoMoments = [
   {
-    id: "drawing-overlay",
-    symbol: "◎",
-    title: "Drawing Overlay",
+    id: "draw-from-scratch",
+    title: "Draw from Scratch",
     description:
-      "Scribble, circle, arrow, or highlight anything on your live localhost. No more describing layout issues, just point at what needs fixing.",
-    highlight: "Full tldraw canvas overlay",
+      "Start with a blank canvas and sketch a new UI element directly on top of your app.",
+    badge: "Create",
+    gifPlaceholder: "GIF_PLACEHOLDER_DRAW",
   },
   {
-    id: "lasso-select",
-    symbol: "⌘",
-    title: "Lasso Select",
+    id: "lasso-or-select",
+    title: "Select with Lasso or Click",
     description:
-      "Click any element to capture it, or draw a freeform lasso to select multiple at once. We automatically extract CSS selectors, tag names, and bounding boxes.",
-    highlight: "Multi-element selection",
+      "Use lasso for grouped edits or click-select for precision targeting on a single element.",
+    badge: "Select",
+    gifPlaceholder: "GIF_PLACEHOLDER_SELECT",
   },
   {
-    id: "context-capture",
-    symbol: "▣",
-    title: "Context Capture",
+    id: "iterative-loop",
+    title: "Iterate in a Tight Loop",
     description:
-      "Every annotation captures a screenshot of your drawing plus all relevant DOM context. AI sees exactly what you see, including nearby styles and CSS classes.",
-    highlight: "Screenshot + DOM analysis",
+      "Prompt, preview, refine, and repeat until the result matches your intent.",
+    badge: "Refine",
+    gifPlaceholder: "GIF_PLACEHOLDER_ITERATE",
   },
   {
-    id: "ai-generation",
-    symbol: "◆",
-    title: "AI Code Generation",
+    id: "gesture-erase",
+    title: "Erase with Gestures",
     description:
-      "Type what you want, hit submit, and watch Gemini generate the exact code changes. It understands your drawing, your selected elements, and your project's style patterns.",
-    highlight: "Gemini CLI integration",
+      "Natural erase gestures remove marks quickly so you can keep momentum while editing.",
+    badge: "Edit",
+    gifPlaceholder: "GIF_PLACEHOLDER_ERASE",
   },
   {
-    id: "instant-updates",
-    symbol: "↯",
-    title: "Instant Updates",
+    id: "undo-change",
+    title: "Undo Any Change",
     description:
-      "Generated code gets written directly to your source files. No copy-pasting, no switching windows. Your hot-reloading dev server shows changes immediately.",
-    highlight: "Zero-friction workflow",
+      "Roll back instantly when you want to test alternatives or recover from a wrong move.",
+    badge: "Control",
+    gifPlaceholder: "GIF_PLACEHOLDER_UNDO",
   },
 ]
 
@@ -72,7 +72,7 @@ export default function FeaturesPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Header />
       <main className="pb-24">
-        <div className="mx-auto max-w-3xl px-6 py-16">
+        <div className="mx-auto max-w-5xl px-6 py-16">
           {/* Hero */}
           <section className="mb-20 text-center">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
@@ -107,30 +107,32 @@ export default function FeaturesPage() {
             </div>
           </section>
 
-          {/* Features Grid */}
+          {/* Demo Moments */}
           <section className="mb-20">
-            <h2 className="mb-10 text-center text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Core Features
-            </h2>
-            <div className="space-y-8">
-              {features.map((feature, index) => (
-                <div
-                  id={feature.id}
-                  key={feature.title}
-                  className={`flex gap-6 ${index % 2 === 1 ? "flex-row-reverse" : ""
-                    }`}
-                >
-                  <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl border border-border bg-muted/30 text-xl font-medium">
-                    {feature.symbol}
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="mb-2 text-lg font-medium">{feature.title}</h3>
-                    <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
-                      {feature.description}
-                    </p>
-                    <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                      {feature.highlight}
+            <div className="mb-10 text-center">
+              <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Product Demos
+              </h2>
+              <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                A quick look at the core interactions you can showcase in short clips.
+              </p>
+            </div>
+            <div className="space-y-12">
+              {demoMoments.map((feature) => (
+                <div id={feature.id} key={feature.title} className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {feature.badge}
                     </span>
+                    <h3 className="text-lg font-medium">{feature.title}</h3>
+                  </div>
+                  <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                    {feature.description}
+                  </p>
+                  <div className="rounded-2xl border border-border/80 bg-muted/20 p-3">
+                    <div className="flex aspect-[16/9] min-h-[260px] w-full items-center justify-center rounded-xl border border-dashed border-border/70 bg-background/80 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                      {feature.gifPlaceholder}
+                    </div>
                   </div>
                 </div>
               ))}
