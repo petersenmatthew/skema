@@ -61,7 +61,53 @@ Get your API key from [Google AI Studio](https://aistudio.google.com/apikey) or 
 
 ### 4. Add Skema to your app
 
-Add the Skema component to your app (development only):
+#### Next.js App Router (Next.js 13+)
+
+In Next.js App Router, components are Server Components by default. Since Skema uses tldraw (which requires browser APIs), you need to wrap it in a **Client Component**.
+
+**Step 1:** Create a Client Component wrapper:
+
+```tsx
+// src/components/SkemaWrapper.tsx
+"use client";
+
+import dynamic from "next/dynamic";
+
+const Skema = dynamic(() => import("skema-core").then((mod) => mod.Skema), {
+  ssr: false,
+});
+
+export default function SkemaWrapper() {
+  if (process.env.NODE_ENV !== "development") {
+    return null;
+  }
+  return <Skema />;
+}
+```
+
+**Step 2:** Import the wrapper in your layout or page:
+
+```tsx
+// src/app/layout.tsx
+import SkemaWrapper from "@/components/SkemaWrapper";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        <SkemaWrapper />
+      </body>
+    </html>
+  );
+}
+```
+
+> **Why is this needed?** The `ssr: false` option with `next/dynamic` is only allowed in Client Components. Since `layout.tsx` is a Server Component by default, you must create a separate Client Component wrapper.
+
+#### Next.js Pages Router / Other React Apps
+
+For Pages Router or other React frameworks, you can use Skema directly:
 
 ```tsx
 import { Skema } from 'skema-core';
@@ -84,8 +130,12 @@ export default function Page() {
 In a separate terminal, start the Skema daemon in your project directory:
 
 ```bash
-npx skema-core
+npx skema
+# or
+bunx skema
 ```
+
+> **Note**: The package is named `skema-core` but the CLI command is `skema`.
 
 The daemon runs a WebSocket server that:
 - Connects to your browser (auto-connects to `ws://localhost:9999`)
@@ -99,15 +149,13 @@ That's it! Press **⌘⇧E** (Cmd+Shift+E) to toggle the Skema overlay.
 ## Daemon Options
 
 ```bash
-npx skema-core                      # Start daemon (default port 9999)
-npx skema-core --port 8080          # Custom port
-npx skema-core --provider claude    # Use Claude Code CLI instead of Gemini
-npx skema-core --dir /path/to/proj  # Set working directory
-npx skema-core init                 # Initialize project (creates config files)
-npx skema-core help                 # Show help
+npx skema                           # Start daemon (default port 9999)
+npx skema --port 8080               # Custom port
+npx skema --provider claude         # Use Claude Code CLI instead of Gemini
+npx skema --dir /path/to/proj       # Set working directory
+npx skema init                      # Initialize project (creates config files)
+npx skema help                      # Show help
 ```
-
-> **Note**: After installing `skema-core`, you can also use the `skema` command directly (e.g., `skema init`).
 
 ## Keyboard Shortcuts
 
