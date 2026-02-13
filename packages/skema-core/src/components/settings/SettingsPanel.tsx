@@ -143,7 +143,14 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* Vision API key (for drawing analysis) */}
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 14, color: textColor, marginBottom: 6 }}>Gemini Vision API key</div>
+          <div style={{ fontSize: 14, color: textColor, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            Gemini Vision API key
+            <InfoTooltip
+              text="Used to analyze drawing annotations so the AI understands what you've sketched."
+              isDark={isDark}
+              mutedColor={mutedColor}
+            />
+          </div>
           <div style={{ position: 'relative' }}>
             <input
               type={showApiKey ? 'text' : 'password'}
@@ -310,6 +317,78 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
 // =============================================================================
 // Sub-components
+// =============================================================================
+
+// =============================================================================
+// Info Tooltip
+// =============================================================================
+
+interface InfoTooltipProps {
+  text: string;
+  isDark: boolean;
+  mutedColor: string;
+}
+
+const InfoTooltip: React.FC<InfoTooltipProps> = ({ text, isDark, mutedColor }) => {
+  const [show, setShow] = useState(false);
+
+  return (
+    <span
+      style={{ position: 'relative', display: 'inline-flex' }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+        style={{ cursor: 'help', flexShrink: 0 }}
+      >
+        <circle cx="8" cy="8" r="7" stroke={mutedColor} strokeWidth="1.5" />
+        <text
+          x="8"
+          y="12"
+          textAnchor="middle"
+          fill={mutedColor}
+          fontSize="11"
+          fontWeight="600"
+          fontStyle="italic"
+          fontFamily='Georgia, "Times New Roman", serif'
+        >
+          i
+        </text>
+      </svg>
+      {show && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            marginBottom: 8,
+            width: 240,
+            padding: '10px 12px',
+            borderRadius: 10,
+            backgroundColor: isDark ? '#2a2a2a' : '#ffffff',
+            border: `1px solid ${isDark ? '#444' : '#e0e0e0'}`,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            fontSize: 11,
+            lineHeight: 1.5,
+            color: isDark ? '#ccc' : '#444',
+            zIndex: 10,
+            pointerEvents: 'none',
+          }}
+        >
+          {text}
+        </div>
+      )}
+    </span>
+  );
+};
+
+// =============================================================================
+// Setting Row
 // =============================================================================
 
 interface SettingRowProps {
