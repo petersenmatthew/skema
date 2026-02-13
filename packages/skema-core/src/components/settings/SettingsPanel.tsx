@@ -51,6 +51,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onThemeChange,
 }) => {
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
 
   const apiKeyPlaceholder = '•••••••••••••••••••••••••••••••••••••';
 
@@ -143,27 +144,66 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Vision API key (for drawing analysis) */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 14, color: textColor, marginBottom: 6 }}>Gemini Vision API key</div>
-          <input
-            type="password"
-            placeholder=""
-            value={geminiApiKey} 
-            onChange={handleGeminiApiKeyChange}
-            onBlur={handleGeminiApiKeyBlur}
-            onFocus={handleGeminiApiKeyFocus}
-            autoComplete="off"
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '8px 10px',
-              fontSize: 12,
-              fontFamily: 'monospace',
-              border: `1px solid ${borderColor}`,
-              borderRadius: 8,
-              backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
-              color: textColor,
-              outline: 'none',
-            }}
-          />
+          <div style={{ position: 'relative' }}>
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              placeholder=""
+              value={geminiApiKey}
+              onChange={handleGeminiApiKeyChange}
+              onBlur={handleGeminiApiKeyBlur}
+              onFocus={handleGeminiApiKeyFocus}
+              autoComplete="off"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                padding: '8px 32px 8px 10px',
+                fontSize: 12,
+                fontFamily: 'monospace',
+                border: `1px solid ${borderColor}`,
+                borderRadius: 8,
+                backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
+                color: textColor,
+                outline: 'none',
+              }}
+            />
+            {geminiApiKey && (
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                title={showApiKey ? 'Hide API key' : 'Show API key'}
+                style={{
+                  position: 'absolute',
+                  right: 6,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 24,
+                  height: 24,
+                  border: 'none',
+                  borderRadius: 4,
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  padding: 0,
+                  color: mutedColor,
+                }}
+              >
+                {showApiKey ? (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                )}
+              </button>
+            )}
+          </div>
           <div style={{ fontSize: 10, color: mutedColor, marginTop: 4, lineHeight: 1.3 }}>
             Stored in this browser only. Get a key from{' '}
             <a

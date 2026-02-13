@@ -51,7 +51,31 @@ Run the CLI once to complete its login/auth flow before using with Skema.
 
 #### Next.js App Router (Next.js 13+)
 
-In Next.js App Router, components are Server Components by default. Since Skema uses tldraw (which requires browser APIs), you need a small **Client Component** wrapper:
+The simplest way to use Skema with the App Router is to make your root layout a **Client Component** and render `<Skema />` directly.
+
+```tsx
+// src/app/layout.tsx
+"use client";
+
+import type { ReactNode } from "react";
+import { Skema } from "skema-core";
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        {/* Skema overlay - only in development */}
+        {process.env.NODE_ENV === "development" && <Skema />}
+      </body>
+    </html>
+  );
+}
+```
+
+Skema auto-connects to the daemon and handles everything internally. No hooks or callbacks are needed for the default flow.
+
+If you prefer to keep `layout.tsx` as a Server Component, you can instead create a small **Client Component** wrapper:
 
 ```tsx
 // src/components/skema-overlay.tsx
@@ -64,17 +88,19 @@ export function SkemaOverlay() {
 }
 ```
 
-Then import it in your layout:
+And use it from your layout:
 
 ```tsx
 // src/app/layout.tsx
+import type { ReactNode } from "react";
 import { SkemaOverlay } from "@/components/skema-overlay";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
         {children}
+        {/* Skema overlay - only in development */}
         <SkemaOverlay />
       </body>
     </html>
@@ -82,11 +108,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-That's it. Skema auto-connects to the daemon and handles everything internally. No hooks or callbacks needed for the default flow.
-
 #### Next.js Pages Router / Other React Apps
 
-For Pages Router or other React frameworks, you can use Skema directly:
+For Pages Router or other React frameworks, you can use Skema directly in your page or app component:
 
 ```tsx
 import { Skema } from 'skema-core';
