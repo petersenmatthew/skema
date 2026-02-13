@@ -52,7 +52,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 }) => {
   const [geminiApiKey, setGeminiApiKey] = useState('');
 
-  const apiKeyPlaceholder = '••••••••••••••••';
+  const apiKeyPlaceholder = '•••••••••••••••••••••••••••••••••••••';
 
   useEffect(() => {
     if (isOpen) {
@@ -76,7 +76,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   };
 
   const handleGeminiApiKeyFocus = () => {
-    if (geminiApiKey === apiKeyPlaceholder) setGeminiApiKey('');
+    if (geminiApiKey === apiKeyPlaceholder) {
+      const stored = getStoredGeminiApiKey();
+      setGeminiApiKey(stored ?? '');
+    }
   };
 
   if (!isOpen) return null;
@@ -139,11 +142,11 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 
         {/* Vision API key (for drawing analysis) */}
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 14, color: textColor, marginBottom: 6 }}>Vision API key</div>
+          <div style={{ fontSize: 14, color: textColor, marginBottom: 6 }}>Gemini Vision API key</div>
           <input
             type="password"
             placeholder=""
-            value={geminiApiKey}
+            value={geminiApiKey} 
             onChange={handleGeminiApiKeyChange}
             onBlur={handleGeminiApiKeyBlur}
             onFocus={handleGeminiApiKeyFocus}
