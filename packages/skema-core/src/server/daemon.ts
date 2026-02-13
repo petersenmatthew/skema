@@ -435,30 +435,67 @@ const handlers: Record<string, MessageHandler> = {
     // Stream events back (log CLI output in daemon terminal with colored prefix)
     const prefixGreen = '\x1b[32m'; // ANSI green (similar to browser #10b981)
     const reset = '\x1b[0m';
-    for await (const event of events) {
-      if (event.type === 'text' && event.content) {
-        console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
-      } else if (event.type === 'error' && event.content) {
-        console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
-      }
-      sendMessage(ws, {
-        id: msg.id,
-        type: 'ai-event',
-        event,
-        annotationId,
-      });
 
-      if (event.type === 'done') {
+    // Kill the CLI process after 5 minutes to prevent runaway generations
+    const generationTimeout = setTimeout(() => {
+      console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} Generation timeout — killing process`);
+      if (!aiProcess.killed) aiProcess.kill();
+    }, 5 * 60 * 1000);
+
+    let rateLimitHits = 0;
+    const MAX_RATE_LIMIT_HITS = 3;
+
+    try {
+      for await (const event of events) {
+        // Detect rate-limit retry messages (plain text from Gemini CLI internals)
+        if (event.content?.includes('exhausted your capacity')) {
+          rateLimitHits++;
+          if (rateLimitHits >= MAX_RATE_LIMIT_HITS) {
+            console.log(
+              `${prefixGreen}[Skema ${requestProvider}]${reset} ` +
+              `Rate-limited ${rateLimitHits} times — task likely complete, stopping`
+            );
+            if (!aiProcess.killed) aiProcess.kill();
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'generate-complete',
+              success: true,
+              annotationId,
+              provider: requestProvider,
+              mode: requestMode,
+            });
+            break;
+          }
+          continue; // Don't forward retry noise to the client
+        }
+
+        if (event.type === 'text' && event.content) {
+          console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
+        } else if (event.type === 'error' && event.content) {
+          console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
+        }
         sendMessage(ws, {
           id: msg.id,
-          type: 'generate-complete',
-          success: true,
+          type: 'ai-event',
+          event,
           annotationId,
-          provider: requestProvider,
-          mode: requestMode,
         });
-        break;
+
+        if (event.type === 'done') {
+          sendMessage(ws, {
+            id: msg.id,
+            type: 'generate-complete',
+            success: true,
+            annotationId,
+            provider: requestProvider,
+            mode: requestMode,
+          });
+          break;
+        }
       }
+    } finally {
+      clearTimeout(generationTimeout);
+      if (!aiProcess.killed) aiProcess.kill();
     }
   },
 

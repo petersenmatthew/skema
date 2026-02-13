@@ -114,7 +114,6 @@ export async function analyzeImage(
 
     const result = await generateText({
       model,
-      maxTokens: 1024,
       messages: [
         {
           role: 'user',
