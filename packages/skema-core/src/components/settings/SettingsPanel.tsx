@@ -201,7 +201,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div style={{ fontSize: 14, color: textColor, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
             Vision API key
             <InfoTooltip
-              text="Used to analyze drawing annotations so the AI understands what you've sketched."
+              text="Used to analyze your drawings and annotations"
               isDark={isDark}
               mutedColor={mutedColor}
             />
