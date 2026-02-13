@@ -227,7 +227,77 @@ const handlers: Record<string, MessageHandler> = {
     // MCP mode: queue annotation instead of processing immediately
     if (requestMode === 'mcp') {
       const comment = annotation.comment || '';
-      const stored = queueAnnotation(annotation as Annotation, comment);
+      
+      // Perform vision analysis for drawing annotations before queuing
+      let visionDescription = '';
+      const drawingAnnotation = annotation as { drawingImage?: string };
+      
+      if (annotation.type === 'drawing' && drawingAnnotation.drawingImage) {
+        sendMessage(ws, {
+          id: msg.id,
+          type: 'ai-event',
+          event: {
+            type: 'text',
+            content: `[Analyzing drawing with vision...]`,
+            timestamp: new Date().toISOString(),
+            provider: requestProvider,
+          },
+        });
+
+        // Use vision provider from request (default: gemini)
+        const visionProvider = (msg.visionProvider as string | undefined) || 'gemini';
+        const visionModel = msg.visionModel as string | undefined;
+        const visionApiKey = (msg.visionApiKey as string | undefined)
+          || (visionProvider === 'gemini' ? process.env.GEMINI_API_KEY
+            : visionProvider === 'claude' ? process.env.ANTHROPIC_API_KEY
+              : process.env.OPENAI_API_KEY);
+
+        if (visionApiKey) {
+          const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
+            provider: visionProvider as any,
+            apiKey: visionApiKey,
+            model: visionModel,
+          });
+
+          if (visionResult.success) {
+            visionDescription = visionResult.description;
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'ai-event',
+              event: {
+                type: 'text',
+                content: `[Vision analysis complete]\n${visionDescription}`,
+                timestamp: new Date().toISOString(),
+                provider: requestProvider,
+              },
+            });
+          } else {
+            sendMessage(ws, {
+              id: msg.id,
+              type: 'ai-event',
+              event: {
+                type: 'error',
+                content: `Vision analysis failed: ${visionResult.error}`,
+                timestamp: new Date().toISOString(),
+                provider: requestProvider,
+              },
+            });
+          }
+        } else {
+          sendMessage(ws, {
+            id: msg.id,
+            type: 'ai-event',
+            event: {
+              type: 'text',
+              content: `[Vision not available - add your API key in Settings (gear icon)]`,
+              timestamp: new Date().toISOString(),
+              provider: requestProvider,
+            },
+          });
+        }
+      }
+      
+      const stored = queueAnnotation(annotation as Annotation, comment, visionDescription);
       const counts = getAnnotationCounts();
 
       sendMessage(ws, {
@@ -667,6 +737,7 @@ function serializeStoredAnnotation(stored: StoredAnnotation) {
     resolvedBy: stored.resolvedBy,
     resolutionSummary: stored.resolutionSummary,
     dismissalReason: stored.dismissalReason,
+    visionDescription: stored.visionDescription,
     // Include key annotation data the agent needs
     annotation: {
       type: stored.annotation.type,
@@ -675,7 +746,8 @@ function serializeStoredAnnotation(stored: StoredAnnotation) {
       text: (stored.annotation as any).text,
       elementPath: (stored.annotation as any).elementPath,
       boundingBox: stored.annotation.boundingBox,
-      drawingSvg: (stored.annotation as any).drawingSvg,
+      // Skip drawingSvg - verbose SVG path data not needed for MCP agents
+      // Use visionDescription instead for understanding drawings
       drawingImage: (stored.annotation as any).drawingImage,
       extractedText: (stored.annotation as any).extractedText,
       nearbyElements: (stored.annotation as any).nearbyElements,

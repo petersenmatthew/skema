@@ -32,6 +32,8 @@ export interface StoredAnnotation {
   resolutionSummary?: string;
   /** Dismissal reason (from agent) */
   dismissalReason?: string;
+  /** Vision analysis description for drawing annotations */
+  visionDescription?: string;
 }
 
 // =============================================================================
@@ -63,7 +65,8 @@ function notify(event: string, annotation: StoredAnnotation) {
  */
 export function queueAnnotation(
   annotation: Annotation,
-  comment: string
+  comment: string,
+  visionDescription?: string
 ): StoredAnnotation {
   const id = annotation.id || `ann-${Date.now()}`;
   const now = new Date().toISOString();
@@ -74,6 +77,7 @@ export function queueAnnotation(
     status: 'pending',
     createdAt: now,
     updatedAt: now,
+    visionDescription,
   };
 
   storedAnnotations.set(id, stored);

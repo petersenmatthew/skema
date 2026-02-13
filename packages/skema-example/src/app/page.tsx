@@ -23,6 +23,7 @@ export default function OverviewPage() {
               </Link>
               <a href="https://github.com/petersenmatthew/skema" className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted">GitHub</a>
             </div>
+            <p className="mt-8 text-lg font-medium text-foreground">Price</p>
           </section>
 
           {/* What is Skema */}
