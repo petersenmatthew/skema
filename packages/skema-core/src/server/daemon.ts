@@ -265,12 +265,19 @@ const handlers: Record<string, MessageHandler> = {
         },
       });
 
-      // Use Gemini vision if available (API key from request or env)
-      const visionApiKey = (msg.visionApiKey as string | undefined) || process.env.GEMINI_API_KEY;
+      // Use vision provider from request (default: gemini)
+      const visionProvider = (msg.visionProvider as string | undefined) || 'gemini';
+      const visionModel = msg.visionModel as string | undefined;
+      const visionApiKey = (msg.visionApiKey as string | undefined)
+        || (visionProvider === 'gemini' ? process.env.GEMINI_API_KEY
+          : visionProvider === 'claude' ? process.env.ANTHROPIC_API_KEY
+            : process.env.OPENAI_API_KEY);
+
       if (visionApiKey) {
         const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
-          provider: 'gemini',
+          provider: visionProvider as any,
           apiKey: visionApiKey,
+          model: visionModel,
         });
 
         if (visionResult.success) {
@@ -303,7 +310,7 @@ const handlers: Record<string, MessageHandler> = {
           type: 'ai-event',
           event: {
             type: 'text',
-            content: `[Vision not available - add your Gemini API key in Settings (gear icon) or set GEMINI_API_KEY]`,
+            content: `[Vision not available - add your API key in Settings (gear icon)]`,
             timestamp: new Date().toISOString(),
             provider: requestProvider,
           },

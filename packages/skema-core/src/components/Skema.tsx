@@ -32,7 +32,7 @@ import {
   getBoundingBox,
 } from '../utils/element-identification';
 import { blobToBase64, addGridToSvg, extractTextFromShapes } from '../lib/utils';
-import { getStoredGeminiApiKey } from '../lib/settingsStorage';
+import { getStoredVisionApiKey, getStoredVisionProvider, getStoredVisionModel } from '../lib/settingsStorage';
 
 // Extracted Components
 import { SkemaToolbar } from './toolbar/SkemaToolbar';
@@ -138,7 +138,11 @@ export const Skema: React.FC<SkemaProps> = ({
       const result = await generate(
         { ...annotation, comment },
         () => {},
-        { visionApiKey: getStoredGeminiApiKey() }
+        {
+          visionApiKey: getStoredVisionApiKey(getStoredVisionProvider()),
+          visionProvider: getStoredVisionProvider(),
+          visionModel: getStoredVisionModel() || undefined,
+        }
       );
 
       // Track annotation ID for revert

@@ -70,8 +70,10 @@ export {
 export {
   analyzeImage,
   isVisionAvailable,
+  VISION_MODELS,
   type VisionAnalysisResult,
   type VisionConfig,
+  type VisionProvider,
 } from './vision';
 
 // =============================================================================

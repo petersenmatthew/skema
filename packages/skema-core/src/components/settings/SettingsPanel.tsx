@@ -4,12 +4,59 @@
 
 import React, { useState, useEffect } from 'react';
 import type { ExecutionMode, ProviderName, ProviderStatus, AnnotationCounts } from '../../hooks/useDaemon';
-import { getStoredGeminiApiKey, setStoredGeminiApiKey } from '../../lib/settingsStorage';
+import {
+  getStoredVisionApiKey,
+  setStoredVisionApiKey,
+  getStoredVisionProvider,
+  setStoredVisionProvider,
+  getStoredVisionModel,
+  setStoredVisionModel,
+  type VisionProviderName,
+} from '../../lib/settingsStorage';
 import logoDarkUrl from '../../assets/logo-dark';
 import logoLightUrl from '../../assets/logo-light';
 
 // Package version - imported at build time
 const SKEMA_VERSION = '0.2.0';
+
+// Vision provider/model configuration
+const VISION_PROVIDERS: { value: VisionProviderName; label: string }[] = [
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'openai', label: 'OpenAI' },
+];
+
+const VISION_PROVIDER_MODELS: Record<VisionProviderName, { value: string; label: string }[]> = {
+  gemini: [
+    { value: 'gemini-2.5-flash', label: '2.5 Flash' },
+    { value: 'gemini-2.5-pro', label: '2.5 Pro' },
+    { value: 'gemini-3-flash-preview', label: '3 Flash' },
+    { value: 'gemini-3-pro-preview', label: '3 Pro' },
+  ],
+  claude: [
+    { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
+    { value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
+    { value: 'claude-opus-4-6', label: 'Opus 4.6' },
+  ],
+  openai: [
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+  ],
+};
+
+const VISION_PROVIDER_DEFAULT_MODEL: Record<VisionProviderName, string> = {
+  gemini: 'gemini-2.5-flash',
+  claude: 'claude-haiku-4-5-20251001',
+  openai: 'gpt-4o-mini',
+};
+
+const VISION_PROVIDER_KEY_LINKS: Record<VisionProviderName, { label: string; url: string }> = {
+  gemini: { label: 'Google AI Studio', url: 'https://aistudio.google.com/apikey' },
+  claude: { label: 'Anthropic Console', url: 'https://console.anthropic.com/settings/keys' },
+  openai: { label: 'OpenAI Platform', url: 'https://platform.openai.com/api-keys' },
+};
 
 export interface SettingsPanelProps {
   isOpen: boolean;
@@ -50,36 +97,61 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   theme,
   onThemeChange,
 }) => {
-  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [visionProvider, setVisionProvider] = useState<VisionProviderName>('gemini');
+  const [visionModel, setVisionModel] = useState('');
+  const [visionApiKey, setVisionApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
 
   const apiKeyPlaceholder = '•••••••••••••••••••••••••••••••••••••';
 
   useEffect(() => {
     if (isOpen) {
-      const stored = getStoredGeminiApiKey();
-      setGeminiApiKey(stored ? apiKeyPlaceholder : '');
+      const storedProvider = getStoredVisionProvider();
+      setVisionProvider(storedProvider);
+      setVisionModel(getStoredVisionModel() || VISION_PROVIDER_DEFAULT_MODEL[storedProvider]);
+      const storedKey = getStoredVisionApiKey(storedProvider);
+      setVisionApiKey(storedKey ? apiKeyPlaceholder : '');
     }
   }, [isOpen]);
 
-  const handleGeminiApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value;
-    setGeminiApiKey(v);
-    if (v === '') setStoredGeminiApiKey('');
-    else if (v !== apiKeyPlaceholder) setStoredGeminiApiKey(v);
+  const handleVisionProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newProvider = e.target.value as VisionProviderName;
+    setVisionProvider(newProvider);
+    setStoredVisionProvider(newProvider);
+    // Load per-provider API key
+    const storedKey = getStoredVisionApiKey(newProvider);
+    setVisionApiKey(storedKey ? apiKeyPlaceholder : '');
+    setShowApiKey(false);
+    // Reset model to default for new provider
+    const defaultModel = VISION_PROVIDER_DEFAULT_MODEL[newProvider];
+    setVisionModel(defaultModel);
+    setStoredVisionModel(defaultModel);
   };
 
-  const handleGeminiApiKeyBlur = () => {
-    if (geminiApiKey === '' || geminiApiKey === apiKeyPlaceholder) {
-      setStoredGeminiApiKey('');
-      if (geminiApiKey === apiKeyPlaceholder) setGeminiApiKey('');
+  const handleVisionModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newModel = e.target.value;
+    setVisionModel(newModel);
+    setStoredVisionModel(newModel);
+  };
+
+  const handleVisionApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setVisionApiKey(v);
+    if (v === '') setStoredVisionApiKey(visionProvider, '');
+    else if (v !== apiKeyPlaceholder) setStoredVisionApiKey(visionProvider, v);
+  };
+
+  const handleVisionApiKeyBlur = () => {
+    if (visionApiKey === '' || visionApiKey === apiKeyPlaceholder) {
+      setStoredVisionApiKey(visionProvider, '');
+      if (visionApiKey === apiKeyPlaceholder) setVisionApiKey('');
     }
   };
 
-  const handleGeminiApiKeyFocus = () => {
-    if (geminiApiKey === apiKeyPlaceholder) {
-      const stored = getStoredGeminiApiKey();
-      setGeminiApiKey(stored ?? '');
+  const handleVisionApiKeyFocus = () => {
+    if (visionApiKey === apiKeyPlaceholder) {
+      const stored = getStoredVisionApiKey(visionProvider);
+      setVisionApiKey(stored ?? '');
     }
   };
 
@@ -144,7 +216,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* Vision API key (for drawing analysis) */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 14, color: textColor, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-            Gemini Vision API key
+            Vision API key
             <InfoTooltip
               text="Used to analyze drawing annotations so the AI understands what you've sketched."
               isDark={isDark}
@@ -155,10 +227,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <input
               type={showApiKey ? 'text' : 'password'}
               placeholder=""
-              value={geminiApiKey}
-              onChange={handleGeminiApiKeyChange}
-              onBlur={handleGeminiApiKeyBlur}
-              onFocus={handleGeminiApiKeyFocus}
+              value={visionApiKey}
+              onChange={handleVisionApiKeyChange}
+              onBlur={handleVisionApiKeyBlur}
+              onFocus={handleVisionApiKeyFocus}
               autoComplete="off"
               style={{
                 width: '100%',
@@ -173,7 +245,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
                 outline: 'none',
               }}
             />
-            {geminiApiKey && (
+            {visionApiKey && (
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
@@ -212,15 +284,56 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
             )}
           </div>
           <div style={{ fontSize: 10, color: mutedColor, marginTop: 4, lineHeight: 1.3 }}>
-            Stored in this browser only. Get a key from{' '}
+            Stored in this browser only. Get a key at{' '}
             <a
-              href="https://aistudio.google.com/apikey"
+              href={VISION_PROVIDER_KEY_LINKS[visionProvider].url}
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: isDark ? '#93c5fd' : '#2563eb' }}
             >
-              Google AI Studio
+              {VISION_PROVIDER_KEY_LINKS[visionProvider].label}
             </a>
+          </div>
+          {/* Provider + Model selectors (compact one-line) */}
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <select
+              value={visionProvider}
+              onChange={handleVisionProviderChange}
+              style={{
+                flex: 1,
+                padding: '6px 8px',
+                fontSize: 12,
+                border: `1px solid ${borderColor}`,
+                borderRadius: 6,
+                backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
+                color: textColor,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              {VISION_PROVIDERS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+            <select
+              value={visionModel}
+              onChange={handleVisionModelChange}
+              style={{
+                flex: 1.5,
+                padding: '6px 8px',
+                fontSize: 11,
+                border: `1px solid ${borderColor}`,
+                borderRadius: 6,
+                backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
+                color: textColor,
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              {VISION_PROVIDER_MODELS[visionProvider].map(m => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
           </div>
         </div>
 

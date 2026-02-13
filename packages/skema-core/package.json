@@ -68,9 +68,12 @@
     "react-dom": ">=19.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
     "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "ai": "^4.0.0",
     "dotenv": "^16.4.5",
     "framer-motion": "^12.34.0",
     "tldraw": "^3.15.5",

@@ -1,20 +1,39 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import type { AIProvider } from './ai-provider';
+import { generateText } from 'ai';
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
 import { IMAGE_ANALYSIS_PROMPT } from './prompts';
 
 // =============================================================================
 // Types
 // =============================================================================
 
+export type VisionProvider = 'gemini' | 'claude' | 'openai';
+
+export const VISION_MODELS: Record<VisionProvider, { models: string[]; default: string }> = {
+  gemini: {
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3-pro-preview'],
+    default: 'gemini-2.5-flash',
+  },
+  claude: {
+    models: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929', 'claude-opus-4-6'],
+    default: 'claude-haiku-4-5-20251001',
+  },
+  openai: {
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1', 'gpt-5.2'],
+    default: 'gpt-4o-mini',
+  },
+};
+
 export interface VisionAnalysisResult {
   success: boolean;
   description: string;
-  provider: AIProvider;
+  provider: VisionProvider;
   error?: string;
 }
 
 export interface VisionConfig {
-  provider: AIProvider;
+  provider: VisionProvider;
   /** API key for vision API (falls back to env vars) */
   apiKey?: string;
   /** Model to use for vision */
@@ -22,110 +41,41 @@ export interface VisionConfig {
 }
 
 // =============================================================================
-// Gemini Vision
+// Provider Factory
 // =============================================================================
 
-async function analyzeWithGemini(
-  base64Image: string,
-  apiKey: string,
-  model: string = 'gemini-2.5-flash'
-): Promise<VisionAnalysisResult> {
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const visionModel = genAI.getGenerativeModel({ model });
+function getProviderModel(provider: VisionProvider, apiKey: string, model?: string) {
+  const modelId = model || VISION_MODELS[provider].default;
 
-    // Clean base64 string if needed (remove data URI prefix)
-    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
-
-    const result = await visionModel.generateContent([
-      IMAGE_ANALYSIS_PROMPT,
-      {
-        inlineData: {
-          data: cleanBase64,
-          mimeType: 'image/png',
-        },
-      },
-    ]);
-
-    const response = await result.response;
-    const text = response.text();
-
-    return {
-      success: true,
-      description: text,
-      provider: 'gemini',
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('[Vision] Gemini analysis failed:', message);
-    return {
-      success: false,
-      description: '',
-      provider: 'gemini',
-      error: message,
-    };
+  switch (provider) {
+    case 'gemini': {
+      const google = createGoogleGenerativeAI({ apiKey });
+      return google(modelId);
+    }
+    case 'claude': {
+      const anthropic = createAnthropic({ apiKey });
+      return anthropic(modelId);
+    }
+    case 'openai': {
+      const openai = createOpenAI({ apiKey });
+      return openai(modelId);
+    }
   }
 }
 
-// =============================================================================
-// Claude Vision
-// =============================================================================
+function getEnvVarForProvider(provider: VisionProvider): string | undefined {
+  switch (provider) {
+    case 'gemini': return process.env.GEMINI_API_KEY;
+    case 'claude': return process.env.ANTHROPIC_API_KEY;
+    case 'openai': return process.env.OPENAI_API_KEY;
+  }
+}
 
-async function analyzeWithClaude(
-  base64Image: string,
-  apiKey: string,
-  model: string = 'claude-sonnet-4-20250514'
-): Promise<VisionAnalysisResult> {
-  try {
-    // Dynamic import to avoid bundling issues if not installed
-    const Anthropic = (await import('@anthropic-ai/sdk')).default;
-    const client = new Anthropic({ apiKey });
-
-    // Clean base64 string
-    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
-
-    const response = await client.messages.create({
-      model,
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/png',
-                data: cleanBase64,
-              },
-            },
-            {
-              type: 'text',
-              text: IMAGE_ANALYSIS_PROMPT,
-            },
-          ],
-        },
-      ],
-    });
-
-    // Extract text from response
-    const textContent = response.content.find((c) => c.type === 'text');
-    const description = textContent && 'text' in textContent ? textContent.text : '';
-
-    return {
-      success: true,
-      description,
-      provider: 'claude',
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error('[Vision] Claude analysis failed:', message);
-    return {
-      success: false,
-      description: '',
-      provider: 'claude',
-      error: message,
-    };
+function getEnvVarName(provider: VisionProvider): string {
+  switch (provider) {
+    case 'gemini': return 'GEMINI_API_KEY';
+    case 'claude': return 'ANTHROPIC_API_KEY';
+    case 'openai': return 'OPENAI_API_KEY';
   }
 }
 
@@ -143,38 +93,66 @@ export async function analyzeImage(
   const { provider } = config;
 
   // Get API key from config or environment
-  let apiKey = config.apiKey;
-  if (!apiKey) {
-    apiKey = provider === 'gemini'
-      ? process.env.GEMINI_API_KEY
-      : process.env.ANTHROPIC_API_KEY;
-  }
+  const apiKey = config.apiKey || getEnvVarForProvider(provider);
 
   if (!apiKey) {
     return {
       success: false,
       description: '',
       provider,
-      error: `No API key found for ${provider} vision. Set ${provider === 'gemini' ? 'GEMINI_API_KEY' : 'ANTHROPIC_API_KEY'} environment variable.`,
+      error: `No API key found for ${provider} vision. Set ${getEnvVarName(provider)} environment variable.`,
     };
   }
 
   console.log(`[Vision] Analyzing image with ${provider}...`);
 
-  if (provider === 'gemini') {
-    return analyzeWithGemini(base64Image, apiKey, config.model);
-  } else {
-    return analyzeWithClaude(base64Image, apiKey, config.model);
+  try {
+    // Clean base64 string if needed (remove data URI prefix)
+    const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
+
+    const model = getProviderModel(provider, apiKey, config.model);
+
+    const result = await generateText({
+      model,
+      maxTokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              image: Buffer.from(cleanBase64, 'base64'),
+              mimeType: 'image/png',
+            },
+            {
+              type: 'text',
+              text: IMAGE_ANALYSIS_PROMPT,
+            },
+          ],
+        },
+      ],
+    });
+
+    return {
+      success: true,
+      description: result.text,
+      provider,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[Vision] ${provider} analysis failed:`, message);
+    return {
+      success: false,
+      description: '',
+      provider,
+      error: message,
+    };
   }
 }
 
 /**
  * Check if vision analysis is available for a provider
  */
-export function isVisionAvailable(provider: AIProvider): boolean {
-  if (provider === 'gemini') {
-    return !!process.env.GEMINI_API_KEY;
-  } else {
-    return !!process.env.ANTHROPIC_API_KEY;
-  }
+export function isVisionAvailable(provider: VisionProvider): boolean {
+  return !!getEnvVarForProvider(provider);
 }
