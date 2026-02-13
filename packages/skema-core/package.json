@@ -24,7 +24,6 @@
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "bin": {
-    "skema": "dist/cli.js",
     "skema-core": "dist/cli.js",
     "skema-mcp": "dist/mcp.js"
   },

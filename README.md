@@ -172,7 +172,6 @@ Skema supports two execution modes, configurable via the settings panel or CLI:
 | `skema_dismiss` | Dismiss with a reason |
 | `skema_watch` | Block until new annotations appear (for hands-free loops) |
 
-> **Note**: After installing `skema-core`, you can also use the `skema` command directly (e.g., `skema init`).
 
 ## Keyboard Shortcuts
 
@@ -221,8 +220,8 @@ bun run dev
 - `bun run build` - Build the skema-core package
 - `bun run dev` - Build core and run example in watch mode
 - `bun run example` - Run the example Next.js app
-- `bun run skema` - Run the Skema CLI/daemon locally
-- `bun run skema:init` - Run Skema init locally
+- `npx skema-core` - Run the Skema CLI/daemon
+- `npx skema-core init` - Initialize Skema in a project
 
 ## Architecture
 

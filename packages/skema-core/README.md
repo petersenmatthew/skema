@@ -107,7 +107,6 @@ npx skema-core init                 # Initialize project (creates config files)
 npx skema-core help                 # Show help
 ```
 
-> **Note**: After installing `skema-core`, you can also use the `skema` command directly (e.g., `skema init`).
 
 ## Keyboard Shortcuts
 

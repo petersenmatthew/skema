@@ -24,11 +24,11 @@ bun run dev
 # Build core in watch mode only
 bun run --filter skema-core watch
 
-# Run Skema CLI/daemon locally
-bun run skema
+# Run Skema CLI/daemon
+npx skema-core
 
-# Run Skema init locally
-bun run skema:init
+# Run Skema init
+npx skema-core init
 ```
 
 ## Monorepo Structure
@@ -43,7 +43,7 @@ This is a Bun workspaces monorepo with two packages:
 The package has four entry points configured in `tsup.config.ts`:
 1. **Client** (`index.ts`) - React component + utilities for browser
 2. **Server** (`server/index.ts`) - Node.js utilities (daemon, AI providers, vision)
-3. **CLI** (`cli/index.ts`) - Main executable script (`skema` command)
+3. **CLI** (`cli/index.ts`) - Main executable script (`skema-core` command)
 4. **MCP** (`mcp/index.ts`) - MCP server executable (`skema-mcp` command)
 
 ## Architecture
@@ -86,12 +86,7 @@ Skema uses a WebSocket daemon for AI code generation:
 
 **Terminal** (runs daemon):
 ```bash
-# For local development in this repo:
-bun run skema                    # Start daemon (default port 9999)
-bun run skema -- --port 8080     # Custom port
-
-# For end users (after npm install skema-core):
-npx skema-core                   # Start daemon
+npx skema-core                   # Start daemon (default port 9999)
 npx skema-core --port 8080       # Custom port
 ```
 

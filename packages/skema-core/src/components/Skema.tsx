@@ -1009,11 +1009,23 @@ export const Skema: React.FC<SkemaProps> = ({
         }
       `}</style>
 
+      {/* Pulsing animation for disconnected state */}
+      <style>{`
+        @keyframes skema-pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.15); opacity: 0.8; }
+        }
+        @keyframes skema-glow {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+          50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+        }
+      `}</style>
+
       {/* Floating Settings Button - Bottom Right */}
       {isToolbarExpanded && (
         <button
           onClick={() => setIsStylePanelOpen(prev => !prev)}
-          title={isStylePanelOpen ? "Hide style settings" : "Show style settings"}
+          title={isStylePanelOpen ? "Hide style settings" : !daemonState.connected ? "Daemon not connected - click to configure" : "Show style settings"}
           style={{
             position: 'fixed',
             bottom: 16,
@@ -1024,13 +1036,14 @@ export const Skema: React.FC<SkemaProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             backgroundColor: isStylePanelOpen ? '#FF6800' : isDark ? '#2a2a2a' : 'white',
-            border: 'none',
+            border: !daemonState.connected && !isStylePanelOpen ? '2px solid #ef4444' : 'none',
             borderRadius: 12,
             boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
             cursor: 'pointer',
             pointerEvents: 'auto',
             zIndex: zIndex + 5,
             transition: 'all 0.2s ease',
+            animation: !daemonState.connected && !isStylePanelOpen ? 'skema-glow 2s ease-in-out infinite' : 'none',
           }}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1049,6 +1062,35 @@ export const Skema: React.FC<SkemaProps> = ({
               strokeLinejoin="round"
             />
           </svg>
+          {/* Warning badge when disconnected */}
+          {!daemonState.connected && !isStylePanelOpen && (
+            <div
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                width: 20,
+                height: 20,
+                backgroundColor: '#ef4444',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                animation: 'skema-pulse 2s ease-in-out infinite',
+                boxShadow: '0 2px 4px rgba(239, 68, 68, 0.4)',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M12 9V13M12 17H12.01M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z"
+                  stroke="white"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+          )}
         </button>
       )}
 
