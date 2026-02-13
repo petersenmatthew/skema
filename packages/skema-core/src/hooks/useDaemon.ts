@@ -283,8 +283,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           pending.resolve(msg);
         }
       }
-    } catch (e) {
-      console.error('[useDaemon] Failed to parse message:', e);
+    } catch {
     }
   }, []);
 
@@ -301,34 +300,26 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     try {
       const ws = new WebSocket(url);
 
-      ws.onopen = () => {
-        console.log('[useDaemon] Connected to daemon');
-      };
+      ws.onopen = () => {};
 
       ws.onmessage = handleMessage;
 
       ws.onclose = () => {
-        console.log('[useDaemon] Disconnected from daemon');
         setState((prev) => ({ ...prev, connected: false }));
         wsRef.current = null;
 
         // Auto-reconnect
         if (autoReconnect) {
-          reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('[useDaemon] Attempting to reconnect...');
-            connect();
-          }, reconnectDelay);
+          reconnectTimeoutRef.current = setTimeout(connect, reconnectDelay);
         }
       };
 
-      ws.onerror = (e) => {
-        console.error('[useDaemon] WebSocket error:', e);
+      ws.onerror = () => {
         setError('Failed to connect to Skema daemon. Is it running?');
       };
 
       wsRef.current = ws;
-    } catch (e) {
-      console.error('[useDaemon] Failed to create WebSocket:', e);
+    } catch {
       setError('Failed to connect to Skema daemon');
     }
   }, [url, autoReconnect, reconnectDelay, handleMessage]);
@@ -353,8 +344,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     try {
       const response = await sendRequest<{ type: string; provider: ProviderName }>('set-provider', { provider });
       return response.type === 'provider-changed';
-    } catch (e) {
-      console.error('[useDaemon] Failed to set provider:', e);
+    } catch {
       return false;
     }
   }, [sendRequest]);
@@ -364,8 +354,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     try {
       const response = await sendRequest<{ type: string; mode: ExecutionMode }>('set-mode', { mode });
       return response.type === 'mode-changed';
-    } catch (e) {
-      console.error('[useDaemon] Failed to set mode:', e);
+    } catch {
       return false;
     }
   }, [sendRequest]);
@@ -374,8 +363,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
   const refreshProviderStatus = useCallback(async () => {
     try {
       await sendRequest('check-providers', {});
-    } catch (e) {
-      console.error('[useDaemon] Failed to refresh provider status:', e);
+    } catch {
     }
   }, [sendRequest]);
 

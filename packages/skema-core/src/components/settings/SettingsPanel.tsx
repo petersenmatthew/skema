@@ -142,7 +142,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <div style={{ fontSize: 14, color: textColor, marginBottom: 6 }}>Vision API key</div>
           <input
             type="password"
-            placeholder="Gemini API key (for drawing analysis)"
+            placeholder=""
             value={geminiApiKey}
             onChange={handleGeminiApiKeyChange}
             onBlur={handleGeminiApiKeyBlur}

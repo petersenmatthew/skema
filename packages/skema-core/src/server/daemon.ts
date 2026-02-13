@@ -317,6 +317,8 @@ const handlers: Record<string, MessageHandler> = {
       visionDescription,
     });
 
+    console.log(`[Skema] Prompt:\n${prompt}`);
+
     // Send prompt as debug event
     sendMessage(ws, {
       id: msg.id,
@@ -353,8 +355,13 @@ const handlers: Record<string, MessageHandler> = {
 
     const { process: aiProcess, events } = spawnAICLI(prompt, config);
 
-    // Stream events back
+    // Stream events back (log CLI output in daemon terminal)
     for await (const event of events) {
+      if (event.type === 'text' && event.content) {
+        console.log(`[Skema ${requestProvider}] ${event.content}`);
+      } else if (event.type === 'error' && event.content) {
+        console.error(`[Skema ${requestProvider}] ${event.content}`);
+      }
       sendMessage(ws, {
         id: msg.id,
         type: 'ai-event',

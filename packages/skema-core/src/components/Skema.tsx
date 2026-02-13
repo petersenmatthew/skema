@@ -129,7 +129,6 @@ export const Skema: React.FC<SkemaProps> = ({
   // =============================================================================
   const internalOnAnnotationSubmit = useCallback(async (annotation: Annotation, comment: string) => {
     if (!daemonState.connected) {
-      console.warn('[Skema] Not connected to daemon. Run: npx skema-serve');
       return;
     }
 
@@ -138,14 +137,7 @@ export const Skema: React.FC<SkemaProps> = ({
     try {
       const result = await generate(
         { ...annotation, comment },
-        (event) => {
-          // Log events to browser console
-          if (event.type === 'text') {
-            console.log(`%c[Skema ${daemonState.provider}]`, 'color: #10b981', event.content);
-          } else if (event.type === 'error') {
-            console.error('[Skema Error]', event.content);
-          }
-        },
+        () => {},
         { visionApiKey: getStoredGeminiApiKey() }
       );
 
@@ -153,8 +145,7 @@ export const Skema: React.FC<SkemaProps> = ({
       if (result.annotationId) {
         annotationChangesRef.current.set(annotation.id, result.annotationId);
       }
-    } catch (error) {
-      console.error('[Skema] Failed to generate:', error);
+    } catch {
     } finally {
       setInternalIsProcessing(false);
     }
@@ -169,8 +160,7 @@ export const Skema: React.FC<SkemaProps> = ({
     try {
       await revert(trackedId);
       annotationChangesRef.current.delete(annotationId);
-    } catch (error) {
-      console.error('[Skema] Failed to revert:', error);
+    } catch {
     }
   }, [revert]);
 
@@ -617,8 +607,7 @@ export const Skema: React.FC<SkemaProps> = ({
           if (svgResult?.svg) {
             drawingSvg = addGridToSvg(svgResult.svg, gridConfig);
           }
-        } catch (e) {
-          console.warn('[Skema] Failed to export drawing SVG:', e);
+        } catch {
         }
 
         try {
@@ -626,15 +615,13 @@ export const Skema: React.FC<SkemaProps> = ({
           if (imageResult?.blob) {
             drawingImage = await blobToBase64(imageResult.blob);
           }
-        } catch (e) {
-          console.warn('[Skema] Failed to export drawing image:', e);
+        } catch {
         }
 
         try {
           const shapes = shapeIds.map(id => editor.getShape(id)).filter(Boolean);
           extractedText = extractTextFromShapes(shapes);
-        } catch (e) {
-          console.warn('[Skema] Failed to extract text from shapes:', e);
+        } catch {
         }
       }
 
@@ -728,7 +715,6 @@ export const Skema: React.FC<SkemaProps> = ({
       annotations,
     };
     navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
-    console.log('[Skema] Exported annotations:', exportData);
     alert('Annotations copied to clipboard!');
   }, [annotations]);
 
@@ -902,8 +888,7 @@ export const Skema: React.FC<SkemaProps> = ({
           }
         };
       }
-    } catch (e) {
-      console.warn('Failed to override double click behavior', e);
+    } catch {
     }
 
     // Set initial camera to match scroll position

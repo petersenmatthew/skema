@@ -25,6 +25,13 @@ export default function OverviewPage() {
             </div>
           </section>
 
+          {/* New Heart Icon */}
+          <div className="mt-8 mb-8 flex justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-24 w-24 text-red-500">
+              <path fillRule="evenodd" d="M11.645 20.91L.007.003-.02-.012c-2.712-1.609-4.707-3.794-5.836-6.091-.88-1.815-1.221-3.6-1.189-5.351.059-1.745.545-3.5 1.905-4.86l.004-.004c1.3-.004 2.583.196 3.656.79l1.04-.66c.52-.33 1.25-.33 1.77 0l1.04.66c1.073-.594 2.356-.794 3.656-.79l.004.004 1.905 4.86c1.36 1.36 1.845 3.115 1.905 4.86.032 1.751-.308 3.536-1.189 5.351-1.129 2.297-3.124 4.482-5.836 6.091-.018.01-.035.019-.053.028-.007.003-.013.006-.02.009-.016.008-.028.017-.039.025a1.693 1.693 0 0 1-.122.075c-.07.04-1.371.74-2.825-.494Z" clipRule="evenodd" />
+            </svg>
+          </div>
+
           {/* What is Skema */}
           <section className="mb-20">
             <div className="leading-relaxed text-lg text-muted-foreground">
