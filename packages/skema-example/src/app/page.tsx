@@ -6,10 +6,10 @@ export default function OverviewPage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Header />
-      <main className="pb-24">
-        <div className="mx-auto max-w-2xl px-6 py-16">
+      <main className="pb-12">
+        <div className="mx-auto max-w-2xl px-6 py-12">
           {/* Hero */}
-          <section className="mb-24">
+          <section className="mb-12">
             <ThemedLogo className="h-30 w-auto" />
             <p className="mt-6 text-lg leading-relaxed text-muted-foreground">
               art == design == code.
@@ -23,11 +23,11 @@ export default function OverviewPage() {
               </Link>
               <a href="https://github.com/petersenmatthew/skema" className="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-foreground transition-colors hover:bg-muted">GitHub</a>
             </div>
-            <p className="mt-8 text-lg font-medium text-foreground">Price</p>
+  
           </section>
 
           {/* What is Skema */}
-          <section className="mb-20">
+          <section className="mb-10">
             <div className="leading-relaxed text-lg text-muted-foreground">
               <ThemedLogo className="inline-block h-6 w-auto align-middle" /> is an <a href="https://www.npmjs.com/package/skema-core" className="rounded bg-muted px-1.5 py-0.5 font-mono text-sm text-foreground no-underline transition-opacity hover:opacity-70">npm package</a> that provides a drawing overlay for annotating and manipulating DOM elements visually. It sits on top of your localhost website, allowing developers to annotate, draw, and select DOM elements directly on the live page.
             </div>
@@ -39,7 +39,7 @@ export default function OverviewPage() {
           </section>
 
           {/* Key Concepts */}
-          <section className="mb-20">
+          <section className="mb-8">
             <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Key Concepts</h2>
             <div className="space-y-4">
               <Link href="/features#drawing-overlay" className="flex justify-between border-b border-border pb-4 text-foreground no-underline transition-colors hover:opacity-70">
@@ -65,29 +65,11 @@ export default function OverviewPage() {
             </div>
           </section>
 
-          {/* Architecture */}
-          <section>
-            <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-muted-foreground">Architecture</h2>
-            <div className="rounded-lg border border-border bg-muted/20 p-6">
-              <pre className="font-mono text-sm leading-relaxed text-muted-foreground">
-                {`skema/
-├── packages/
-│   ├── skema-core/           # Main React component
-│   │   ├── src/
-│   │   │   ├── components/   # Skema overlay
-│   │   │   ├── tools/        # Custom tldraw tools
-│   │   │   └── utils/        # Coordinate utilities
-│   │   └── package.json
-│   └── skema-example/        # Next.js demo
-└── package.json              # Root workspace`}
-              </pre>
-            </div>
-          </section>
         </div>
+        <p className="mt-8 text-center text-xs text-muted-foreground">
+          Made by Matthew Petersen & Justin Wu
+        </p>
       </main>
-      <p className="pb-12 text-center text-xs text-muted-foreground">
-        Made by Matthew Petersen & Justin Wu
-      </p>
     </div>
   )
 }
