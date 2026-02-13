@@ -32,6 +32,7 @@ import {
   getBoundingBox,
 } from '../utils/element-identification';
 import { blobToBase64, addGridToSvg, extractTextFromShapes } from '../lib/utils';
+import { getStoredGeminiApiKey } from '../lib/settingsStorage';
 
 // Extracted Components
 import { SkemaToolbar } from './toolbar/SkemaToolbar';
@@ -144,7 +145,8 @@ export const Skema: React.FC<SkemaProps> = ({
           } else if (event.type === 'error') {
             console.error('[Skema Error]', event.content);
           }
-        }
+        },
+        { visionApiKey: getStoredGeminiApiKey() }
       );
 
       // Track annotation ID for revert

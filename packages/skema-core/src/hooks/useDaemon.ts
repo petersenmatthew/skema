@@ -47,6 +47,8 @@ export interface GenerateOptions {
   mode?: ExecutionMode;
   /** Override provider for this request */
   provider?: ProviderName;
+  /** Gemini API key for vision/drawing analysis (e.g. from settings) */
+  visionApiKey?: string | null;
 }
 
 export interface UseDaemonOptions {
@@ -407,6 +409,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
         // Include optional overrides
         ...(options?.mode && { mode: options.mode }),
         ...(options?.provider && { provider: options.provider }),
+        ...(options?.visionApiKey != null && options.visionApiKey !== '' && { visionApiKey: options.visionApiKey }),
       }));
     });
   }, [nextId]);

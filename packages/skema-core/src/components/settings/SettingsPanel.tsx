@@ -2,8 +2,9 @@
 // Settings Panel Component
 // =============================================================================
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ExecutionMode, ProviderName, ProviderStatus, AnnotationCounts } from '../../hooks/useDaemon';
+import { getStoredGeminiApiKey, setStoredGeminiApiKey } from '../../lib/settingsStorage';
 import logoDarkUrl from '../../assets/logo-dark';
 import logoLightUrl from '../../assets/logo-light';
 
@@ -49,6 +50,35 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   theme,
   onThemeChange,
 }) => {
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+
+  const apiKeyPlaceholder = '••••••••••••••••';
+
+  useEffect(() => {
+    if (isOpen) {
+      const stored = getStoredGeminiApiKey();
+      setGeminiApiKey(stored ? apiKeyPlaceholder : '');
+    }
+  }, [isOpen]);
+
+  const handleGeminiApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setGeminiApiKey(v);
+    if (v === '') setStoredGeminiApiKey('');
+    else if (v !== apiKeyPlaceholder) setStoredGeminiApiKey(v);
+  };
+
+  const handleGeminiApiKeyBlur = () => {
+    if (geminiApiKey === '' || geminiApiKey === apiKeyPlaceholder) {
+      setStoredGeminiApiKey('');
+      if (geminiApiKey === apiKeyPlaceholder) setGeminiApiKey('');
+    }
+  };
+
+  const handleGeminiApiKeyFocus = () => {
+    if (geminiApiKey === apiKeyPlaceholder) setGeminiApiKey('');
+  };
+
   if (!isOpen) return null;
 
   const isDark = theme === 'dark';
@@ -106,6 +136,43 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         <SettingRow label="Theme" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
           <ThemeIconToggle isDark={isDark} onToggle={() => onThemeChange(isDark ? 'light' : 'dark')} />
         </SettingRow>
+
+        {/* Vision API key (for drawing analysis) */}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 14, color: textColor, marginBottom: 6 }}>Vision API key</div>
+          <input
+            type="password"
+            placeholder="Gemini API key (for drawing analysis)"
+            value={geminiApiKey}
+            onChange={handleGeminiApiKeyChange}
+            onBlur={handleGeminiApiKeyBlur}
+            onFocus={handleGeminiApiKeyFocus}
+            autoComplete="off"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '8px 10px',
+              fontSize: 12,
+              fontFamily: 'monospace',
+              border: `1px solid ${borderColor}`,
+              borderRadius: 8,
+              backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
+              color: textColor,
+              outline: 'none',
+            }}
+          />
+          <div style={{ fontSize: 10, color: mutedColor, marginTop: 4, lineHeight: 1.3 }}>
+            Stored in this browser only. Get a key from{' '}
+            <a
+              href="https://aistudio.google.com/apikey"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: isDark ? '#93c5fd' : '#2563eb' }}
+            >
+              Google AI Studio
+            </a>
+          </div>
+        </div>
 
         {/* Disconnected Banner */}
         {!connected && (

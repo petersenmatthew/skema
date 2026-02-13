@@ -12,7 +12,7 @@ import {
   type ProviderStatus,
 } from './ai-provider';
 import { buildPromptFromAnnotation, type ProjectContext } from './gemini-cli';
-import { analyzeImage, isVisionAvailable } from './vision';
+import { analyzeImage } from './vision';
 import { type ProviderName, type ExecutionMode } from './providers';
 import type { Annotation } from '../types';
 import {
@@ -265,10 +265,12 @@ const handlers: Record<string, MessageHandler> = {
         },
       });
 
-      // Use Gemini vision if available
-      if (isVisionAvailable('gemini')) {
+      // Use Gemini vision if available (API key from request or env)
+      const visionApiKey = (msg.visionApiKey as string | undefined) || process.env.GEMINI_API_KEY;
+      if (visionApiKey) {
         const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
           provider: 'gemini',
+          apiKey: visionApiKey,
         });
 
         if (visionResult.success) {
@@ -301,7 +303,7 @@ const handlers: Record<string, MessageHandler> = {
           type: 'ai-event',
           event: {
             type: 'text',
-            content: `[Vision not available - set GEMINI_API_KEY for image analysis]`,
+            content: `[Vision not available - add your Gemini API key in Settings (gear icon) or set GEMINI_API_KEY]`,
             timestamp: new Date().toISOString(),
             provider: requestProvider,
           },
