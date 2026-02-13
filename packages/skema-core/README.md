@@ -45,19 +45,14 @@ npm install -g @anthropic-ai/gemini-cli
 npm install -g @anthropic-ai/claude-code
 ```
 
-### 3. Set up your API key
+### 3. Set up your vision API key (optional)
 
-Skema uses vision AI to analyze your drawings. Add your API key to a `.env` file in your project root:
+Skema uses vision AI to analyze drawings. You can set your Gemini API key in either place:
 
-```env
-# For Gemini (recommended)
-GEMINI_API_KEY=your_api_key
+- **In the app**: Open Settings (gear icon in the toolbar) and enter your Gemini API key. It is stored in this browser only (localStorage).
+- **Environment**: In your project root, add a `.env` file with `GEMINI_API_KEY=your_api_key`. The daemon loads this when you run `npx skema-core`.
 
-# Or for Claude
-ANTHROPIC_API_KEY=your_api_key
-```
-
-Get your API key from [Google AI Studio](https://aistudio.google.com/apikey) or [Anthropic Console](https://console.anthropic.com/).
+Get a key from [Google AI Studio](https://aistudio.google.com/apikey). Without a key, drawing annotations still run but skip vision analysis.
 
 ### 4. Add Skema to your app
 

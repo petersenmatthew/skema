@@ -12,7 +12,7 @@ import {
   type ProviderStatus,
 } from './ai-provider';
 import { buildPromptFromAnnotation, type ProjectContext } from './gemini-cli';
-import { analyzeImage, isVisionAvailable } from './vision';
+import { analyzeImage } from './vision';
 import { type ProviderName, type ExecutionMode } from './providers';
 import type { Annotation } from '../types';
 import {
@@ -265,10 +265,12 @@ const handlers: Record<string, MessageHandler> = {
         },
       });
 
-      // Use Gemini vision if available
-      if (isVisionAvailable('gemini')) {
+      // Use Gemini vision if available (API key from request or env)
+      const visionApiKey = (msg.visionApiKey as string | undefined) || process.env.GEMINI_API_KEY;
+      if (visionApiKey) {
         const visionResult = await analyzeImage(drawingAnnotation.drawingImage, {
           provider: 'gemini',
+          apiKey: visionApiKey,
         });
 
         if (visionResult.success) {
@@ -301,7 +303,7 @@ const handlers: Record<string, MessageHandler> = {
           type: 'ai-event',
           event: {
             type: 'text',
-            content: `[Vision not available - set GEMINI_API_KEY for image analysis]`,
+            content: `[Vision not available - add your Gemini API key in Settings (gear icon) or set GEMINI_API_KEY]`,
             timestamp: new Date().toISOString(),
             provider: requestProvider,
           },
@@ -314,6 +316,8 @@ const handlers: Record<string, MessageHandler> = {
       fastMode: msg.fastMode === true,
       visionDescription,
     });
+
+    console.log(`[Skema] Prompt:\n${prompt}`);
 
     // Send prompt as debug event
     sendMessage(ws, {
@@ -351,8 +355,15 @@ const handlers: Record<string, MessageHandler> = {
 
     const { process: aiProcess, events } = spawnAICLI(prompt, config);
 
-    // Stream events back
+    // Stream events back (log CLI output in daemon terminal with colored prefix)
+    const prefixGreen = '\x1b[32m'; // ANSI green (similar to browser #10b981)
+    const reset = '\x1b[0m';
     for await (const event of events) {
+      if (event.type === 'text' && event.content) {
+        console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
+      } else if (event.type === 'error' && event.content) {
+        console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
+      }
       sendMessage(ws, {
         id: msg.id,
         type: 'ai-event',
