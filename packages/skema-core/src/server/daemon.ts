@@ -72,6 +72,7 @@ const annotationSnapshots = new Map<string, string>();
 
 // Track MCP server connection (separate from browser clients)
 let mcpServerClient: WebSocket | null = null;
+let mcpClientName: string | null = null;
 
 function getAnnotationCounts() {
   const all = getAllAnnotations();
@@ -581,15 +582,29 @@ const handlers: Record<string, MessageHandler> = {
   identify: async (msg, ws) => {
     if (msg.client === 'mcp-server') {
       mcpServerClient = ws;
+      mcpClientName = null; // Will be set when mcp-client-info arrives
       console.log('[Daemon] MCP server identified and connected');
       // Notify browser clients
       broadcastToClients({
         type: 'mcp-server-status',
         connected: true,
+        clientName: null,
       });
       return { id: msg.id, type: 'identified', client: 'mcp-server' };
     }
     return { id: msg.id, type: 'identified', client: 'unknown' };
+  },
+
+  'mcp-client-info': async (msg) => {
+    mcpClientName = (msg.clientName as string) || null;
+    console.log('[Daemon] MCP client identified:', mcpClientName, msg.clientVersion || '');
+    // Broadcast updated name to browser clients
+    broadcastToClients({
+      type: 'mcp-server-status',
+      connected: true,
+      clientName: mcpClientName,
+    });
+    return { id: msg.id, type: 'ok' };
   },
 
   // -------------------------------------------------------------------------
@@ -605,6 +620,7 @@ const handlers: Record<string, MessageHandler> = {
       availableProviders: getCLIProviders(),
       availableModes: ['direct-cli', 'mcp'] as ExecutionMode[],
       mcpServerConnected: mcpServerClient?.readyState === WebSocket.OPEN,
+      mcpClientName,
     };
   },
 };
@@ -674,6 +690,7 @@ function handleConnection(ws: WebSocket) {
     pendingAnnotations: currentMode === 'mcp' ? getPendingCount() : 0,
     providerStatus: getAllProviderStatuses(),
     mcpServerConnected: mcpServerClient?.readyState === WebSocket.OPEN,
+    mcpClientName,
   });
 
   ws.on('message', async (data) => {
@@ -712,10 +729,12 @@ function handleConnection(ws: WebSocket) {
     // If the MCP server disconnected, notify browser clients
     if (ws === mcpServerClient) {
       mcpServerClient = null;
+      mcpClientName = null;
       console.log('[Daemon] MCP server disconnected');
       broadcastToClients({
         type: 'mcp-server-status',
         connected: false,
+        clientName: null,
       });
     }
   });

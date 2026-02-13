@@ -30,6 +30,7 @@ export interface DaemonState {
   providerStatus: Record<ProviderName, ProviderStatus>;
   cwd: string;
   mcpServerConnected: boolean;
+  mcpClientName: string | null;
   annotationCounts: AnnotationCounts;
 }
 
@@ -118,6 +119,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     providerStatus: defaultProviderStatus,
     cwd: '',
     mcpServerConnected: false,
+    mcpClientName: null,
     annotationCounts: { pending: 0, acknowledged: 0, resolved: 0, dismissed: 0 },
   });
   const [isGenerating, setIsGenerating] = useState(false);
@@ -175,6 +177,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
           providerStatus: msg.providerStatus || prev.providerStatus,
           cwd: msg.cwd || prev.cwd,
           mcpServerConnected: msg.mcpServerConnected ?? prev.mcpServerConnected,
+          mcpClientName: msg.mcpClientName !== undefined ? msg.mcpClientName : prev.mcpClientName,
         }));
         setError(null);
         return;
@@ -234,6 +237,7 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
         setState((prev) => ({
           ...prev,
           mcpServerConnected: msg.connected,
+          mcpClientName: msg.clientName !== undefined ? msg.clientName : prev.mcpClientName,
         }));
         return;
       }

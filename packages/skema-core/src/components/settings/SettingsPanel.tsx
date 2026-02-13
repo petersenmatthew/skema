@@ -22,6 +22,7 @@ export interface SettingsPanelProps {
   providerStatus: Record<ProviderName, ProviderStatus>;
   // MCP state
   mcpServerConnected: boolean;
+  mcpClientName: string | null;
   annotationCounts: AnnotationCounts;
   // Actions
   onModeChange: (mode: ExecutionMode) => Promise<boolean>;
@@ -41,6 +42,7 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   availableProviders,
   providerStatus,
   mcpServerConnected,
+  mcpClientName,
   annotationCounts,
   onModeChange,
   onProviderChange,
@@ -105,27 +107,64 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <ThemeIconToggle isDark={isDark} onToggle={() => onThemeChange(isDark ? 'light' : 'dark')} />
         </SettingRow>
 
+        {/* Disconnected Banner */}
+        {!connected && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 12px',
+              borderRadius: 10,
+              backgroundColor: isDark ? '#2a1a1a' : '#fef2f2',
+              border: `1px solid ${isDark ? '#3d2020' : '#fecaca'}`,
+              marginBottom: 12,
+            }}
+          >
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                backgroundColor: '#ef4444',
+                flexShrink: 0,
+                boxShadow: '0 0 6px #ef444460',
+              }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: isDark ? '#fca5a5' : '#dc2626' }}>
+                Daemon not running
+              </div>
+              <div style={{ fontSize: 10, color: isDark ? '#888' : '#999', marginTop: 2, lineHeight: 1.3 }}>
+                Run <span style={{ fontFamily: 'monospace', fontSize: 10, color: isDark ? '#aaa' : '#666' }}>npx skema-core</span> to start
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mode Toggle: CLI vs MCP */}
-        <SettingRow label="Mode" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
+        <SettingRow label="Mode" isDark={isDark} textColor={textColor} mutedColor={mutedColor} disabled={!connected}>
           <ToggleSwitch
             options={['CLI', 'MCP']}
             value={mode === 'mcp' ? 1 : 0}
             onChange={(idx) => onModeChange(idx === 1 ? 'mcp' : 'direct-cli')}
             isDark={isDark}
+            disabled={!connected}
           />
         </SettingRow>
 
         {/* Mode description */}
-        <div style={{ fontSize: 11, color: mutedColor, marginTop: -6, marginBottom: 12, lineHeight: 1.4 }}>
+        <div style={{ fontSize: 11, color: mutedColor, marginTop: -6, marginBottom: 12, lineHeight: 1.4, opacity: connected ? 1 : 0.4 }}>
           {mode === 'mcp'
             ? 'Annotations are queued for your AI agent to process'
             : 'Annotations processed instantly via CLI agents'}
         </div>
 
         {/* MCP Status Panel */}
-        {mode === 'mcp' && (
+        {mode === 'mcp' && connected && (
           <McpStatusPanel
             mcpServerConnected={mcpServerConnected}
+            mcpClientName={mcpClientName}
             annotationCounts={annotationCounts}
             isDark={isDark}
             mutedColor={mutedColor}
@@ -135,20 +174,23 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         {/* CLI Provider Toggle (only in CLI mode) */}
         {mode === 'direct-cli' && (
           <>
-            <SettingRow label="Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
+            <SettingRow label="Provider" isDark={isDark} textColor={textColor} mutedColor={mutedColor} disabled={!connected}>
               <ToggleSwitch
                 options={['Gemini', 'Claude']}
                 value={provider === 'claude' ? 1 : 0}
                 onChange={(idx) => onProviderChange(idx === 1 ? 'claude' : 'gemini')}
                 isDark={isDark}
+                disabled={!connected}
               />
             </SettingRow>
-            <ProviderStatusIndicator
-              provider={provider as ProviderName}
-              status={providerStatus[provider as ProviderName]}
-              isDark={isDark}
-              mutedColor={mutedColor}
-            />
+            {connected && (
+              <ProviderStatusIndicator
+                provider={provider as ProviderName}
+                status={providerStatus[provider as ProviderName]}
+                isDark={isDark}
+                mutedColor={mutedColor}
+              />
+            )}
           </>
         )}
       </div>
@@ -165,10 +207,11 @@ interface SettingRowProps {
   isDark: boolean;
   textColor: string;
   mutedColor: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }
 
-const SettingRow: React.FC<SettingRowProps> = ({ label, textColor, children }) => (
+const SettingRow: React.FC<SettingRowProps> = ({ label, textColor, disabled, children }) => (
   <div
     style={{
       display: 'flex',
@@ -177,7 +220,7 @@ const SettingRow: React.FC<SettingRowProps> = ({ label, textColor, children }) =
       marginBottom: 12,
     }}
   >
-    <span style={{ fontSize: 14, color: textColor }}>{label}</span>
+    <span style={{ fontSize: 14, color: textColor, opacity: disabled ? 0.4 : 1, transition: 'opacity 0.2s ease' }}>{label}</span>
     {children}
   </div>
 );
@@ -187,11 +230,12 @@ interface ToggleSwitchProps {
   value: number;
   onChange: (index: number) => void;
   isDark: boolean;
+  disabled?: boolean;
 }
 
-const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ options, value, onChange, isDark }) => {
+const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ options, value, onChange, isDark, disabled }) => {
   const bgColor = isDark ? '#2a2a2a' : '#f0f0f0';
-  const activeColor = '#FF6800';
+  const activeColor = disabled ? (isDark ? '#555' : '#aaa') : '#FF6800';
 
   return (
     <div
@@ -200,19 +244,22 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ options, value, onChange, i
         backgroundColor: bgColor,
         borderRadius: 8,
         padding: 2,
+        opacity: disabled ? 0.5 : 1,
+        transition: 'opacity 0.2s ease',
       }}
     >
       {options.map((option, idx) => (
         <button
           key={option}
-          onClick={() => onChange(idx)}
+          onClick={() => !disabled && onChange(idx)}
+          disabled={disabled}
           style={{
             padding: '6px 12px',
             fontSize: 12,
             fontWeight: 500,
             border: 'none',
             borderRadius: 6,
-            cursor: 'pointer',
+            cursor: disabled ? 'not-allowed' : 'pointer',
             backgroundColor: value === idx ? activeColor : 'transparent',
             color: value === idx ? 'white' : isDark ? '#888' : '#666',
             transition: 'all 0.2s ease',
@@ -226,11 +273,32 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ options, value, onChange, i
 };
 
 // =============================================================================
+// MCP Client Name Formatting
+// =============================================================================
+
+const CLIENT_NAME_MAP: Record<string, string> = {
+  'cursor': 'Cursor',
+  'claude-desktop': 'Claude Desktop',
+  'claude-code': 'Claude Code',
+  'windsurf': 'Windsurf',
+  'cline': 'Cline',
+  'continue': 'Continue',
+  'zed': 'Zed',
+  'anti-gravity': 'Anti-Gravity',
+};
+
+function formatClientName(name: string): string {
+  const lower = name.toLowerCase();
+  return CLIENT_NAME_MAP[lower] || name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+// =============================================================================
 // MCP Status Panel
 // =============================================================================
 
 interface McpStatusPanelProps {
   mcpServerConnected: boolean;
+  mcpClientName: string | null;
   annotationCounts: AnnotationCounts;
   isDark: boolean;
   mutedColor: string;
@@ -238,12 +306,15 @@ interface McpStatusPanelProps {
 
 const McpStatusPanel: React.FC<McpStatusPanelProps> = ({
   mcpServerConnected,
+  mcpClientName,
   annotationCounts,
   isDark,
   mutedColor,
 }) => {
   const serverDotColor = mcpServerConnected ? '#10b981' : '#ef4444';
-  const serverStatusText = mcpServerConnected ? 'Connected' : 'Not detected';
+  const serverStatusText = mcpServerConnected
+    ? mcpClientName ? formatClientName(mcpClientName) : 'Connected'
+    : 'Not detected';
   const totalActive = annotationCounts.pending + annotationCounts.acknowledged;
 
   return (

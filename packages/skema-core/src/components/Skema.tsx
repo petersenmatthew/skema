@@ -1063,6 +1063,7 @@ export const Skema: React.FC<SkemaProps> = ({
         availableProviders={daemonState.availableProviders}
         providerStatus={daemonState.providerStatus}
         mcpServerConnected={daemonState.mcpServerConnected}
+        mcpClientName={daemonState.mcpClientName}
         annotationCounts={daemonState.annotationCounts}
         onModeChange={setMode}
         onProviderChange={setProvider}

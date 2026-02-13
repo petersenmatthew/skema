@@ -36,6 +36,8 @@ const DAEMON_URL = `ws://localhost:${DAEMON_PORT}`;
 
 let daemonWs: WebSocket | null = null;
 let daemonConnected = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+const RECONNECT_INTERVAL = 3000;
 let messageIdCounter = 0;
 const pendingRequests = new Map<string, {
   resolve: (data: any) => void;
@@ -43,11 +45,30 @@ const pendingRequests = new Map<string, {
   timeout: ReturnType<typeof setTimeout>;
 }>();
 
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    console.error('[Skema MCP] Attempting to reconnect to daemon...');
+    try {
+      await connectToDaemon();
+    } catch {
+      // connectToDaemon's close/error handlers will schedule the next retry
+    }
+  }, RECONNECT_INTERVAL);
+}
+
 function connectToDaemon(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (daemonWs && daemonConnected) {
       resolve();
       return;
+    }
+
+    // Clean up any stale socket before creating a new one
+    if (daemonWs) {
+      daemonWs.removeAllListeners();
+      daemonWs = null;
     }
 
     daemonWs = new WebSocket(DAEMON_URL);
@@ -67,13 +88,13 @@ function connectToDaemon(): Promise<void> {
     daemonWs.on('message', (data) => {
       try {
         const msg = JSON.parse(data.toString());
-        
+
         // Handle responses to our requests
         if (msg.id && pendingRequests.has(msg.id)) {
           const pending = pendingRequests.get(msg.id)!;
           pendingRequests.delete(msg.id);
           clearTimeout(pending.timeout);
-          
+
           if (msg.type === 'error') {
             pending.reject(new Error(msg.error));
           } else {
@@ -89,6 +110,7 @@ function connectToDaemon(): Promise<void> {
       daemonConnected = false;
       daemonWs = null;
       console.error('[Skema MCP] Disconnected from daemon');
+      scheduleReconnect();
     });
 
     daemonWs.on('error', (err) => {
@@ -388,11 +410,12 @@ async function handleTool(name: string, args: any): Promise<ToolResult> {
 // =============================================================================
 
 export async function startMcpServer(): Promise<void> {
-  // Try to connect to daemon on startup
+  // Try to connect to daemon on startup, auto-reconnect if unavailable
   try {
     await connectToDaemon();
   } catch {
-    console.error('[Skema MCP] Warning: Could not connect to daemon. Will retry on first tool call.');
+    console.error('[Skema MCP] Warning: Could not connect to daemon. Will auto-retry...');
+    scheduleReconnect();
   }
 
   const server = new Server(
@@ -483,6 +506,22 @@ export async function startMcpServer(): Promise<void> {
   // ==========================================================================
   // Start Server
   // ==========================================================================
+
+  // After the MCP client completes initialization, forward its identity to the daemon
+  server.oninitialized = () => {
+    const clientInfo = server.getClientVersion();
+    const clientName = clientInfo?.name || 'unknown';
+    console.error('[Skema MCP] Connected client:', clientName, clientInfo?.version || '');
+    // Send client name to daemon so it can show in the browser UI
+    if (daemonWs && daemonConnected) {
+      daemonWs.send(JSON.stringify({
+        id: `mcp-client-info-${Date.now()}`,
+        type: 'mcp-client-info',
+        clientName,
+        clientVersion: clientInfo?.version,
+      }));
+    }
+  };
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
