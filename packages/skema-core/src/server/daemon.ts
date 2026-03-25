@@ -5,6 +5,7 @@ import * as path from 'path';
 import {
   type AIProvider as CLIProvider,
   type AIProviderConfig,
+  type AIStreamEvent,
   spawnAICLI,
   isProviderAvailable,
   getAvailableProviders as getCLIProviders,
@@ -82,6 +83,53 @@ function getAnnotationCounts() {
     resolved: all.filter((a) => a.status === 'resolved').length,
     dismissed: all.filter((a) => a.status === 'dismissed').length,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function formatClaudeTerminalEntries(event: AIStreamEvent): Array<{ text: string; isError?: boolean }> {
+  if (!isRecord(event.raw)) {
+    if (event.type === 'error' && event.content) return [{ text: event.content, isError: true }];
+    if (event.type === 'text' && event.content) return [{ text: event.content }];
+    return [];
+  }
+
+  const rawType = event.raw.type;
+
+  if (rawType === 'assistant') {
+    const message = isRecord(event.raw.message) ? event.raw.message : null;
+    const content = Array.isArray(message?.content) ? message.content : [];
+
+    return content.flatMap((block) => {
+      if (!isRecord(block) || typeof block.type !== 'string') return [];
+
+      if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
+        return [{ text: block.text.trim() }];
+      }
+
+      if (block.type === 'tool_use' && typeof block.name === 'string') {
+        return [{ text: `Using ${block.name}` }];
+      }
+
+      return [];
+    });
+  }
+
+  if (rawType === 'error') {
+    if (typeof event.raw.message === 'string' && event.raw.message.trim()) {
+      return [{ text: event.raw.message.trim(), isError: true }];
+    }
+    if (event.content) return [{ text: event.content, isError: true }];
+    return [];
+  }
+
+  if (rawType === 'result' && event.raw.is_error === true && typeof event.raw.result === 'string') {
+    return [{ text: event.raw.result, isError: true }];
+  }
+
+  return [];
 }
 
 // =============================================================================
@@ -469,7 +517,15 @@ const handlers: Record<string, MessageHandler> = {
           continue; // Don't forward retry noise to the client
         }
 
-        if (event.type === 'text' && event.content) {
+        if (requestProvider === 'claude') {
+          for (const entry of formatClaudeTerminalEntries(event)) {
+            if (entry.isError) {
+              console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${entry.text}`);
+            } else {
+              console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${entry.text}`);
+            }
+          }
+        } else if (event.type === 'text' && event.content) {
           console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
         } else if (event.type === 'error' && event.content) {
           console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
