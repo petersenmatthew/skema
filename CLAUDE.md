@@ -107,7 +107,7 @@ npx skema-core --port 8080       # Custom port
 
 #### CLI Providers (`src/server/ai-provider.ts`)
 - **Gemini CLI** (`gemini -p <prompt> --yolo --output-format stream-json`)
-- **Claude Code CLI** (`claude -p <prompt> --dangerously-skip-permissions --output-format stream-json`)
+- **Claude Code CLI** (`claude -p <prompt> --output-format stream-json --verbose --dangerously-skip-permissions < /dev/null`)
 
 ### Vision Analysis (`src/server/vision.ts`)
 

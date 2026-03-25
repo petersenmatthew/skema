@@ -79,7 +79,7 @@ const PROVIDERS: Record<AIProvider, ProviderSpec> = {
   claude: {
     command: 'claude',
     buildArgs: (prompt, options) => {
-      const args = ['-p', prompt, '--output-format', 'stream-json'];
+      const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose'];
       if (options?.yolo !== false) args.push('--dangerously-skip-permissions');
       if (options?.model) args.push('--model', options.model);
       return args;
@@ -167,6 +167,7 @@ export function spawnAICLI(
   const child = spawn(spec.command, args, {
     cwd,
     env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
 
   const events: AsyncIterable<AIStreamEvent> = {
