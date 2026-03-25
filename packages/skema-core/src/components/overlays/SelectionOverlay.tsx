@@ -7,17 +7,20 @@ import type { DOMSelection } from '../../types';
 
 interface SelectionOverlayProps {
     selections: DOMSelection[];
+    scrollOffset?: { x: number; y: number };
 }
 
-export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections }) => {
-    // Track scroll position to trigger re-renders
+export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections, scrollOffset: externalOffset }) => {
+    // Track scroll position as fallback when no external offset provided
     const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
+        // Skip internal tracking when external offset is provided
+        if (externalOffset) return;
+
         const handleScrollOrResize = () => {
             setScrollPos({ x: window.scrollX, y: window.scrollY });
         };
-        // Initial position
         handleScrollOrResize();
         window.addEventListener('scroll', handleScrollOrResize, { passive: true });
         window.addEventListener('resize', handleScrollOrResize);
@@ -25,15 +28,17 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections }
             window.removeEventListener('scroll', handleScrollOrResize);
             window.removeEventListener('resize', handleScrollOrResize);
         };
-    }, []);
+    }, [externalOffset]);
+
+    const offset = externalOffset ?? scrollPos;
 
     return (
         <>
             {selections.map((selection) => {
                 // boundingBox is stored in document coordinates
-                // Convert to viewport coordinates by subtracting current scroll
-                const viewportX = selection.boundingBox.x - scrollPos.x;
-                const viewportY = selection.boundingBox.y - scrollPos.y;
+                // Convert to viewport coordinates by subtracting current scroll offset
+                const viewportX = selection.boundingBox.x - offset.x;
+                const viewportY = selection.boundingBox.y - offset.y;
 
                 return (
                     <div

@@ -3,6 +3,7 @@
 // =============================================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Tldraw,
   Editor,
@@ -46,6 +47,7 @@ import { SettingsPanel } from './settings/SettingsPanel';
 // Extracted Hooks
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { useScrollSync, useWheelIntercept } from '../hooks/useScrollSync';
+import { useInfiniteCanvas } from '../hooks/useInfiniteCanvas';
 import { useShapePersistence } from '../hooks/useShapePersistence';
 import { useScribbleDelete } from '../hooks/useScribbleDelete';
 
@@ -198,11 +200,19 @@ export const Skema: React.FC<SkemaProps> = ({
     shortcut: toggleShortcut,
   });
 
-  // Scroll sync between page and tldraw camera
-  const scrollOffset = useScrollSync(isToolbarExpanded, editorRef);
+  // Infinite canvas mode: camera drives page position via body transform
+  const { portalContainer, scrollOffset: canvasScrollOffset } = useInfiniteCanvas(
+    isToolbarExpanded, editorRef, zIndex
+  );
 
-  // Intercept wheel events to scroll page instead of panning tldraw
-  useWheelIntercept(isToolbarExpanded);
+  // Scroll sync (disabled when infinite canvas is active)
+  const nativeScrollOffset = useScrollSync(false, editorRef);
+
+  // Wheel intercept (disabled — tldraw handles wheel natively for canvas panning)
+  useWheelIntercept(false);
+
+  // Use canvas scroll offset when active, native when not
+  const scrollOffset = isToolbarExpanded ? canvasScrollOffset : nativeScrollOffset;
 
   // Persist shapes when toggling overlay off/on
   useShapePersistence(isToolbarExpanded, editorRef);
@@ -975,7 +985,7 @@ export const Skema: React.FC<SkemaProps> = ({
     return null;
   }
 
-  return (
+  const content = (
     <div
       data-skema="container"
       style={{
@@ -1131,7 +1141,7 @@ export const Skema: React.FC<SkemaProps> = ({
       </div>
 
       {/* DOM selection highlights */}
-      <SelectionOverlay selections={domSelections} />
+      <SelectionOverlay selections={domSelections} scrollOffset={isToolbarExpanded ? scrollOffset : undefined} />
 
       {/* Processing loading overlay */}
       {isProcessing && processingBoundingBox && (
@@ -1238,6 +1248,15 @@ export const Skema: React.FC<SkemaProps> = ({
       <style>{skemaToastStyles}</style>
     </div>
   );
+
+  // Always render via portal (outside <body>) to avoid unmount/remount
+  // when toggling infinite canvas, and so body's transform doesn't
+  // break position:fixed elements
+  if (portalContainer) {
+    return createPortal(content, portalContainer);
+  }
+
+  return content;
 };
 
 export default Skema;
