@@ -7,7 +7,7 @@ import type { Editor } from 'tldraw';
 
 interface InfiniteCanvasResult {
     portalContainer: HTMLDivElement | null;
-    scrollOffset: { x: number; y: number };
+    scrollOffset: { x: number; y: number; zoom: number };
 }
 
 /**
@@ -24,7 +24,7 @@ export function useInfiniteCanvas(
     zIndex: number = 99999
 ): InfiniteCanvasResult {
     const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
-    const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 });
+    const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0, zoom: 1 });
 
     // Store original styles for restoration
     const originalsRef = useRef<{
@@ -111,7 +111,7 @@ export function useInfiniteCanvas(
                 cleanupCameraRef.current = null;
             }
 
-            setScrollOffset({ x: 0, y: 0 });
+            setScrollOffset({ x: 0, y: 0, zoom: 1 });
             return;
         }
 
@@ -175,33 +175,55 @@ export function useInfiniteCanvas(
         // Set initial camera to match the former scroll position
         if (editor) {
             editor.setCamera({ x: -initialScrollX, y: -initialScrollY, z: 1 });
-            setScrollOffset({ x: initialScrollX, y: initialScrollY });
+            setScrollOffset({ x: initialScrollX, y: initialScrollY, zoom: 1 });
         }
 
-        // Subscribe to camera changes to sync body transform
+        // Subscribe to camera changes to sync body transform + scale
         if (editor) {
             const cleanup = editor.sideEffects.registerAfterChangeHandler('camera', () => {
                 const cam = editor.getCamera();
-                body.style.transform = `translate(${cam.x}px, ${cam.y}px)`;
+                body.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
                 html.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
-                setScrollOffset({ x: -cam.x, y: -cam.y });
+                html.style.backgroundSize = `${20 * cam.z}px ${20 * cam.z}px`;
+                setScrollOffset({ x: -cam.x, y: -cam.y, zoom: cam.z });
             });
             cleanupCameraRef.current = cleanup;
         }
 
-        // Intercept all wheel events and convert to camera pan
-        // (tldraw's default wheel behavior is zoom, not pan;
-        //  native scroll is locked, so all wheel should pan the canvas)
+        // Intercept all wheel events:
+        // - Regular scroll → pan
+        // - Ctrl+scroll / pinch → zoom (like Figma)
         const handleWheel = (e: WheelEvent) => {
             e.preventDefault();
             e.stopPropagation();
 
-            if (editor) {
-                const cam = editor.getCamera();
+            if (!editor) return;
+
+            const cam = editor.getCamera();
+
+            if (e.ctrlKey || e.metaKey) {
+                // Zoom: Ctrl+wheel or trackpad pinch (browsers send ctrlKey for pinch)
+                const zoomFactor = 1 - e.deltaY * 0.005;
+                const newZ = Math.min(Math.max(cam.z * zoomFactor, 0.1), 8);
+
+                // Zoom toward cursor position
+                const cx = e.clientX;
+                const cy = e.clientY;
+                // The world point under the cursor: worldX = (screenX - camX) / camZ
+                const wx = (cx - cam.x) / cam.z;
+                const wy = (cy - cam.y) / cam.z;
+                // After zoom, keep the same world point under the cursor:
+                // screenX = worldX * newZ + newCamX → newCamX = screenX - worldX * newZ
+                const newX = cx - wx * newZ;
+                const newY = cy - wy * newZ;
+
+                editor.setCamera({ x: newX, y: newY, z: newZ });
+            } else {
+                // Pan
                 editor.setCamera({
                     x: cam.x - e.deltaX,
                     y: cam.y - e.deltaY,
-                    z: 1,
+                    z: cam.z,
                 });
             }
         };

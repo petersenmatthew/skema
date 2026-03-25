@@ -5,9 +5,10 @@
 import { useEffect, useState, RefObject } from 'react';
 import type { Editor } from 'tldraw';
 
-interface ScrollOffset {
+export interface ScrollOffset {
     x: number;
     y: number;
+    zoom: number;
 }
 
 /**
@@ -18,14 +19,14 @@ export function useScrollSync(
     isActive: boolean,
     editorRef: RefObject<Editor | null>
 ): ScrollOffset {
-    const [scrollOffset, setScrollOffset] = useState<ScrollOffset>({ x: 0, y: 0 });
+    const [scrollOffset, setScrollOffset] = useState<ScrollOffset>({ x: 0, y: 0, zoom: 1 });
 
     // Sync scroll position with tldraw camera
     useEffect(() => {
         if (!isActive) return;
 
         const syncScroll = () => {
-            const newOffset = { x: window.scrollX, y: window.scrollY };
+            const newOffset = { x: window.scrollX, y: window.scrollY, zoom: 1 };
             setScrollOffset(newOffset);
 
             // Update tldraw camera to match scroll position

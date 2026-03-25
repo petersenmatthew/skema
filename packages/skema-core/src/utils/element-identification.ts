@@ -3,6 +3,7 @@
 // =============================================================================
 
 import type { BoundingBox, DOMSelection, ElementStyles, NearbyElement, ProjectStyleContext } from '../types';
+import { screenRectToDocBBox } from './coordinates';
 
 /**
  * Generates a unique CSS selector for an element
@@ -168,16 +169,11 @@ export function identifyElement(target: HTMLElement): string {
 }
 
 /**
- * Gets bounding box for an element in document coordinates (includes scroll offset)
+ * Gets bounding box for an element in true document coordinates.
+ * Accounts for any CSS transform on the body (infinite canvas mode).
  */
 export function getBoundingBox(element: HTMLElement): BoundingBox {
-  const rect = element.getBoundingClientRect();
-  return {
-    x: rect.left + window.scrollX,
-    y: rect.top + window.scrollY,
-    width: rect.width,
-    height: rect.height,
-  };
+  return screenRectToDocBBox(element.getBoundingClientRect());
 }
 
 /**
@@ -498,13 +494,13 @@ export function findNearbyElementsWithStyles(
     if (!(el instanceof HTMLElement)) return;
     if (shouldIgnoreElement(el)) return;
 
-    const rect = el.getBoundingClientRect();
+    const elBox = screenRectToDocBBox(el.getBoundingClientRect());
     // Skip very small elements
-    if (rect.width < 10 || rect.height < 10) return;
+    if (elBox.width < 10 || elBox.height < 10) return;
 
     const elCenter = {
-      x: rect.left + window.scrollX + rect.width / 2,
-      y: rect.top + window.scrollY + rect.height / 2,
+      x: elBox.x + elBox.width / 2,
+      y: elBox.y + elBox.height / 2,
     };
 
     // Calculate distance from bounds center to element center

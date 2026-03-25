@@ -7,7 +7,7 @@ import type { DOMSelection } from '../../types';
 
 interface SelectionOverlayProps {
     selections: DOMSelection[];
-    scrollOffset?: { x: number; y: number };
+    scrollOffset?: { x: number; y: number; zoom: number };
 }
 
 export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections, scrollOffset: externalOffset }) => {
@@ -15,7 +15,6 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections, 
     const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
-        // Skip internal tracking when external offset is provided
         if (externalOffset) return;
 
         const handleScrollOrResize = () => {
@@ -30,15 +29,15 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections, 
         };
     }, [externalOffset]);
 
-    const offset = externalOffset ?? scrollPos;
+    const zoom = externalOffset?.zoom ?? 1;
+    const offsetX = externalOffset?.x ?? scrollPos.x;
+    const offsetY = externalOffset?.y ?? scrollPos.y;
 
     return (
         <>
             {selections.map((selection) => {
-                // boundingBox is stored in document coordinates
-                // Convert to viewport coordinates by subtracting current scroll offset
-                const viewportX = selection.boundingBox.x - offset.x;
-                const viewportY = selection.boundingBox.y - offset.y;
+                const viewportX = selection.boundingBox.x * zoom - offsetX;
+                const viewportY = selection.boundingBox.y * zoom - offsetY;
 
                 return (
                     <div
@@ -48,8 +47,8 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections, 
                             position: 'fixed',
                             left: viewportX,
                             top: viewportY,
-                            width: selection.boundingBox.width,
-                            height: selection.boundingBox.height,
+                            width: selection.boundingBox.width * zoom,
+                            height: selection.boundingBox.height * zoom,
                             border: '2px solid #10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             pointerEvents: 'none',

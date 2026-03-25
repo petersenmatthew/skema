@@ -24,7 +24,7 @@ import type { Annotation, DOMSelection, SkemaProps, BoundingBox, PendingAnnotati
 import { useDaemon } from '../hooks/useDaemon';
 
 // Utils
-import { getViewportInfo, bboxIntersects } from '../utils/coordinates';
+import { getViewportInfo, bboxIntersects, screenToWorld } from '../utils/coordinates';
 import {
   createDOMSelection,
   shouldIgnoreElement,
@@ -386,11 +386,14 @@ export const Skema: React.FC<SkemaProps> = ({
       if (shouldIgnoreElement(el)) return;
 
       const rect = el.getBoundingClientRect();
+      // Convert screen coords to world coords (undo body transform)
+      const topLeft = screenToWorld(rect.left, rect.top);
+      const size = screenToWorld(rect.left + rect.width, rect.top + rect.height);
       const elBounds: BoundingBox = {
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height,
+        x: topLeft.x,
+        y: topLeft.y,
+        width: size.x - topLeft.x,
+        height: size.y - topLeft.y,
       };
 
       // Skip tiny elements
@@ -745,19 +748,14 @@ export const Skema: React.FC<SkemaProps> = ({
       }
     }
 
-    const viewportBounds: BoundingBox = {
-      x: brushBounds.x - window.scrollX,
-      y: brushBounds.y - window.scrollY,
-      width: brushBounds.width,
-      height: brushBounds.height,
-    };
-
-    const foundElements = findDOMElementsInBounds(viewportBounds);
+    // brushBounds is in tldraw world coordinates; findDOMElementsInBounds
+    // also converts to world coords, so pass directly
+    const foundElements = findDOMElementsInBounds(brushBounds);
     const newElements = foundElements.filter((el) => {
-      const rect = el.getBoundingClientRect();
+      const elBox = getBoundingBox(el);
       return !domSelections.some(
-        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+        (s) => Math.abs(s.boundingBox.x - elBox.x) < 5 &&
+          Math.abs(s.boundingBox.y - elBox.y) < 5
       );
     });
 
@@ -782,14 +780,10 @@ export const Skema: React.FC<SkemaProps> = ({
       }
     }
 
-    const viewportPoints = lassoPoints.map(p => ({
-      x: p.x - window.scrollX,
-      y: p.y - window.scrollY,
-    }));
-
+    // Lasso points are in tldraw world coordinates
     let lassoMinX = Infinity, lassoMinY = Infinity;
     let lassoMaxX = -Infinity, lassoMaxY = -Infinity;
-    for (const p of viewportPoints) {
+    for (const p of lassoPoints) {
       lassoMinX = Math.min(lassoMinX, p.x);
       lassoMinY = Math.min(lassoMinY, p.y);
       lassoMaxX = Math.max(lassoMaxX, p.x);
@@ -804,13 +798,18 @@ export const Skema: React.FC<SkemaProps> = ({
       if (shouldIgnoreElement(el)) return;
 
       const rect = el.getBoundingClientRect();
-      if (rect.width < 10 || rect.height < 10) return;
+      // Convert screen coords to world coords for comparison with lasso
+      const topLeft = screenToWorld(rect.left, rect.top);
+      const bottomRight = screenToWorld(rect.right, rect.bottom);
+      const worldW = bottomRight.x - topLeft.x;
+      const worldH = bottomRight.y - topLeft.y;
+      if (worldW < 10 || worldH < 10) return;
 
       const boundsOverlap = !(
-        rect.left > lassoMaxX ||
-        rect.right < lassoMinX ||
-        rect.top > lassoMaxY ||
-        rect.bottom < lassoMinY
+        topLeft.x > lassoMaxX ||
+        bottomRight.x < lassoMinX ||
+        topLeft.y > lassoMaxY ||
+        bottomRight.y < lassoMinY
       );
 
       if (boundsOverlap) {
@@ -825,10 +824,10 @@ export const Skema: React.FC<SkemaProps> = ({
     });
 
     const newElements = foundElements.filter((el) => {
-      const rect = el.getBoundingClientRect();
+      const elBox = getBoundingBox(el);
       return !domSelections.some(
-        (s) => Math.abs(s.boundingBox.x - (rect.left + window.scrollX)) < 5 &&
-          Math.abs(s.boundingBox.y - (rect.top + window.scrollY)) < 5
+        (s) => Math.abs(s.boundingBox.x - elBox.x) < 5 &&
+          Math.abs(s.boundingBox.y - elBox.y) < 5
       );
     });
 
@@ -908,13 +907,7 @@ export const Skema: React.FC<SkemaProps> = ({
     // Set initial camera to match scroll position
     editor.setCamera({ x: -window.scrollX, y: -window.scrollY, z: 1 });
 
-    // Prevent zoom changes
-    editor.sideEffects.registerAfterChangeHandler('camera', () => {
-      const camera = editor.getCamera();
-      if (camera.z !== 1) {
-        editor.setCamera({ x: camera.x, y: camera.y, z: 1 });
-      }
-    });
+    // Note: zoom lock removed to support infinite canvas zoom
 
     // Set up lasso tool callbacks
     const lassoSelectTool = editor.root.children?.['lasso-select'] as any;
@@ -1167,10 +1160,10 @@ export const Skema: React.FC<SkemaProps> = ({
             data-skema="pending-highlight"
             style={{
               position: 'fixed',
-              left: pendingAnnotation.boundingBox.x - scrollOffset.x,
-              top: pendingAnnotation.boundingBox.y - scrollOffset.y,
-              width: pendingAnnotation.boundingBox.width,
-              height: pendingAnnotation.boundingBox.height,
+              left: pendingAnnotation.boundingBox.x * (scrollOffset.zoom ?? 1) - scrollOffset.x,
+              top: pendingAnnotation.boundingBox.y * (scrollOffset.zoom ?? 1) - scrollOffset.y,
+              width: pendingAnnotation.boundingBox.width * (scrollOffset.zoom ?? 1),
+              height: pendingAnnotation.boundingBox.height * (scrollOffset.zoom ?? 1),
               border: `2px solid ${pendingAnnotation.isMultiSelect ? '#34C759' : '#3b82f6'}`,
               backgroundColor: pendingAnnotation.isMultiSelect
                 ? 'rgba(52, 199, 89, 0.1)'
