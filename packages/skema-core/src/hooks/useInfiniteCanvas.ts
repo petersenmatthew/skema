@@ -41,6 +41,9 @@ export function useInfiniteCanvas(
         bodyPosition: string;
         bodyWidth: string;
         bodyMinHeight: string;
+        bodyMargin: string;
+        marginLeft: number;
+        marginTop: number;
     } | null>(null);
 
     // Track the camera change handler cleanup
@@ -78,8 +81,9 @@ export function useInfiniteCanvas(
                 let restoreScrollY = 0;
                 if (editor) {
                     const cam = editor.getCamera();
-                    restoreScrollX = -cam.x;
-                    restoreScrollY = -cam.y;
+                    // Compensate for the margin we removed during activation
+                    restoreScrollX = originals.marginLeft - cam.x;
+                    restoreScrollY = originals.marginTop - cam.y;
                 }
 
                 // Restore html styles
@@ -98,6 +102,7 @@ export function useInfiniteCanvas(
                 body.style.position = originals.bodyPosition;
                 body.style.width = originals.bodyWidth;
                 body.style.minHeight = originals.bodyMinHeight;
+                body.style.margin = originals.bodyMargin;
 
                 originalsRef.current = null;
 
@@ -120,6 +125,11 @@ export function useInfiniteCanvas(
         const body = document.body;
         const editor = editorRef.current;
 
+        // Compute body margin before saving (needed for coordinate alignment)
+        const computedStyle = window.getComputedStyle(body);
+        const marginLeft = parseFloat(computedStyle.marginLeft) || 0;
+        const marginTop = parseFloat(computedStyle.marginTop) || 0;
+
         // Save original styles
         originalsRef.current = {
             htmlOverflow: html.style.overflow,
@@ -135,31 +145,45 @@ export function useInfiniteCanvas(
             bodyPosition: body.style.position,
             bodyWidth: body.style.width,
             bodyMinHeight: body.style.minHeight,
+            bodyMargin: body.style.margin,
+            marginLeft,
+            marginTop,
         };
 
         // Capture current scroll position for initial camera
         const initialScrollX = window.scrollX;
         const initialScrollY = window.scrollY;
 
+        // Zero body margin so tldraw shapes and body content share the same
+        // coordinate origin. The margin sits outside CSS transforms, so at
+        // different zoom levels it would create a diverging offset between
+        // tldraw shapes (which don't know about margin) and DOM elements.
+        body.style.margin = '0';
+
         // Lock scroll
         html.style.overflow = 'hidden';
 
-        // Measure page content dimensions BEFORE resetting scroll
+        // Measure page content dimensions AFTER removing margin
         const contentWidth = Math.max(body.scrollWidth, window.innerWidth);
         const contentHeight = Math.max(body.scrollHeight, window.innerHeight);
 
-        // Apply initial body transform to compensate for scroll reset,
-        // then reset scroll to (0,0) so the transform formula stays clean:
-        // body.transform = translate(camX, camY) with viewport at (0,0)
+        // Initial camera compensates for both the removed margin and scroll.
+        // Before activation: viewport = bodyRel + margin - scroll
+        // After (margin=0, scroll=0): viewport = bodyRel * scale + cam
+        // So cam = margin - scroll to preserve the visual position.
+        const initialCamX = marginLeft - initialScrollX;
+        const initialCamY = marginTop - initialScrollY;
+
+        // Apply initial body transform, then reset scroll to (0,0)
         body.style.transformOrigin = '0 0';
-        body.style.transform = `translate(${-initialScrollX}px, ${-initialScrollY}px)`;
+        body.style.transform = `scale(1) translate(${initialCamX}px, ${initialCamY}px)`;
         window.scrollTo(0, 0);
 
         // Apply dot grid to html
         html.style.backgroundColor = '#f5f5f5';
         html.style.backgroundImage = 'radial-gradient(circle, #d0d0d0 1px, transparent 1px)';
         html.style.backgroundSize = '20px 20px';
-        html.style.backgroundPosition = `${-initialScrollX}px ${-initialScrollY}px`;
+        html.style.backgroundPosition = `${initialCamX}px ${initialCamY}px`;
 
         // Style body as an artboard
         body.style.position = 'relative';
@@ -172,20 +196,20 @@ export function useInfiniteCanvas(
             body.style.background = 'white';
         }
 
-        // Set initial camera to match the former scroll position
+        // Set initial camera to match the former scroll position (with margin compensation)
         if (editor) {
-            editor.setCamera({ x: -initialScrollX, y: -initialScrollY, z: 1 });
-            setScrollOffset({ x: initialScrollX, y: initialScrollY, zoom: 1 });
+            editor.setCamera({ x: initialCamX, y: initialCamY, z: 1 });
+            setScrollOffset({ x: -initialCamX, y: -initialCamY, zoom: 1 });
         }
 
         // Subscribe to camera changes to sync body transform + scale
         if (editor) {
             const cleanup = editor.sideEffects.registerAfterChangeHandler('camera', () => {
                 const cam = editor.getCamera();
-                body.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.z})`;
-                html.style.backgroundPosition = `${cam.x}px ${cam.y}px`;
+                body.style.transform = `scale(${cam.z}) translate(${cam.x}px, ${cam.y}px)`;
+                html.style.backgroundPosition = `${cam.x * cam.z}px ${cam.y * cam.z}px`;
                 html.style.backgroundSize = `${20 * cam.z}px ${20 * cam.z}px`;
-                setScrollOffset({ x: -cam.x, y: -cam.y, zoom: cam.z });
+                setScrollOffset({ x: -cam.x * cam.z, y: -cam.y * cam.z, zoom: cam.z });
             });
             cleanupCameraRef.current = cleanup;
         }
@@ -209,20 +233,19 @@ export function useInfiniteCanvas(
                 // Zoom toward cursor position
                 const cx = e.clientX;
                 const cy = e.clientY;
-                // The world point under the cursor: worldX = (screenX - camX) / camZ
-                const wx = (cx - cam.x) / cam.z;
-                const wy = (cy - cam.y) / cam.z;
-                // After zoom, keep the same world point under the cursor:
-                // screenX = worldX * newZ + newCamX → newCamX = screenX - worldX * newZ
-                const newX = cx - wx * newZ;
-                const newY = cy - wy * newZ;
+                // World point under cursor: screen = (world + cam) * zoom → world = screen/zoom - cam
+                const wx = cx / cam.z - cam.x;
+                const wy = cy / cam.z - cam.y;
+                // Keep same world point under cursor: cam = screen/zoom - world
+                const newX = cx / newZ - wx;
+                const newY = cy / newZ - wy;
 
                 editor.setCamera({ x: newX, y: newY, z: newZ });
             } else {
-                // Pan
+                // Pan: divide by zoom so scrolling moves content 1:1 in screen pixels
                 editor.setCamera({
-                    x: cam.x - e.deltaX,
-                    y: cam.y - e.deltaY,
+                    x: cam.x - e.deltaX / cam.z,
+                    y: cam.y - e.deltaY / cam.z,
                     z: cam.z,
                 });
             }
