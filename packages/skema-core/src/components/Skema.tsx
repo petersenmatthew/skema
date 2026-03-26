@@ -399,6 +399,9 @@ export const Skema: React.FC<SkemaProps> = ({
       // Skip tiny elements
       if (elBounds.width < 10 || elBounds.height < 10) return;
 
+      // Skip elements that span most of the viewport (likely page wrappers/containers)
+      if (rect.width > window.innerWidth * 0.85 && rect.height > window.innerHeight * 0.85) return;
+
       if (bboxIntersects(bounds, elBounds)) {
         const isParent = elements.some((existing) => el.contains(existing));
         if (!isParent) {
@@ -804,6 +807,9 @@ export const Skema: React.FC<SkemaProps> = ({
       const worldW = bottomRight.x - topLeft.x;
       const worldH = bottomRight.y - topLeft.y;
       if (worldW < 10 || worldH < 10) return;
+
+      // Skip elements that span most of the viewport (likely page wrappers/containers)
+      if (rect.width > window.innerWidth * 0.85 && rect.height > window.innerHeight * 0.85) return;
 
       const boundsOverlap = !(
         topLeft.x > lassoMaxX ||
