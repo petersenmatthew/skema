@@ -40,6 +40,29 @@ export function useScribbleDelete({
     useEffect(() => {
         if (!isActive) return;
 
+        const resetTracking = () => {
+            isDrawingRef.current = false;
+            scribblePointsRef.current = [];
+            scribbleDetectedRef.current = false;
+        };
+
+        const getPagePointFromEvent = (editor: Editor, e: PointerEvent): GesturePoint | null => {
+            try {
+                const point = editor.screenToPage({ x: e.clientX, y: e.clientY });
+                if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                    return { x: point.x, y: point.y };
+                }
+            } catch {
+            }
+
+            const point = editor.inputs.currentPagePoint;
+            if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                return { x: point.x, y: point.y };
+            }
+
+            return null;
+        };
+
         const handleScribbleDelete = (overlappingIds: TLShapeId[]) => {
             const editor = editorRef.current;
             if (!editor || overlappingIds.length === 0) return;
@@ -79,13 +102,16 @@ export function useScribbleDelete({
             const currentTool = editor.getCurrentToolId();
             if (currentTool !== 'draw') return;
 
+            const point = getPagePointFromEvent(editor, e);
+            if (!point) {
+                resetTracking();
+                return;
+            }
+
             // Start tracking
             isDrawingRef.current = true;
             scribbleDetectedRef.current = false;
-            scribblePointsRef.current = [{
-                x: e.clientX + window.scrollX,
-                y: e.clientY + window.scrollY
-            }];
+            scribblePointsRef.current = [point];
         };
 
         const handlePointerMove = (e: PointerEvent) => {
@@ -95,15 +121,15 @@ export function useScribbleDelete({
             // Only track if draw tool is still active and pointer is down
             const currentTool = editor.getCurrentToolId();
             if (currentTool !== 'draw') {
-                isDrawingRef.current = false;
+                resetTracking();
                 return;
             }
 
-            // Add point (in page coordinates)
-            const newPoint = {
-                x: e.clientX + window.scrollX,
-                y: e.clientY + window.scrollY
-            };
+            const newPoint = getPagePointFromEvent(editor, e);
+            if (!newPoint) {
+                resetTracking();
+                return;
+            }
 
             const points = scribblePointsRef.current;
             const lastPoint = points[points.length - 1];
@@ -124,7 +150,8 @@ export function useScribbleDelete({
                 const gestureResult = isRealtimeScribble(points);
 
                 if (gestureResult.isScribble) {
-                    // Get bounds of the scribble path
+                    // The scribble points are recorded in tldraw page coordinates,
+                    // so overlap tests still work after panning / zooming off-page.
                     const bounds = getPointsBounds(points);
 
                     if (bounds) {
@@ -145,10 +172,13 @@ export function useScribbleDelete({
         };
 
         const handlePointerUp = () => {
-            // Reset tracking state
-            isDrawingRef.current = false;
-            scribblePointsRef.current = [];
-            scribbleDetectedRef.current = false;
+            resetTracking();
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState !== 'visible') {
+                resetTracking();
+            }
         };
 
         // Add listeners with capture to track before tldraw
@@ -156,12 +186,16 @@ export function useScribbleDelete({
         document.addEventListener('pointermove', handlePointerMove, { capture: true });
         document.addEventListener('pointerup', handlePointerUp, { capture: true });
         document.addEventListener('pointercancel', handlePointerUp, { capture: true });
+        window.addEventListener('blur', resetTracking);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
             document.removeEventListener('pointerdown', handlePointerDown, { capture: true });
             document.removeEventListener('pointermove', handlePointerMove, { capture: true });
             document.removeEventListener('pointerup', handlePointerUp, { capture: true });
             document.removeEventListener('pointercancel', handlePointerUp, { capture: true });
+            window.removeEventListener('blur', resetTracking);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }, [isActive, editorRef, setAnnotations, setScribbleToast]);
 }
