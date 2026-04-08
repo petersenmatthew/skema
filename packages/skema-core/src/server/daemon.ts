@@ -132,6 +132,30 @@ function formatClaudeTerminalEntries(event: AIStreamEvent): Array<{ text: string
   return [];
 }
 
+function appendTerminalChunk(buffer: string, chunk: string): string {
+  if (!buffer) return chunk;
+
+  const needsNewline =
+    buffer.endsWith('\n') ||
+    chunk.startsWith('\n') ||
+    /[.!?:]\s*$/.test(buffer);
+
+  return needsNewline ? `${buffer}\n${chunk}` : `${buffer}${chunk}`;
+}
+
+function flushTerminalText(
+  provider: CLIProvider,
+  prefixGreen: string,
+  reset: string,
+  bufferedText: string
+): string {
+  const trimmed = bufferedText.trim();
+  if (!trimmed) return '';
+
+  console.log(`${prefixGreen}[Skema ${provider}]${reset} ${trimmed}`);
+  return '';
+}
+
 // =============================================================================
 // Git Snapshot Functions (for undo support)
 // =============================================================================
@@ -442,8 +466,6 @@ const handlers: Record<string, MessageHandler> = {
       visionDescription,
     });
 
-    console.log(`[Skema] Prompt:\n${prompt}`);
-
     // Send prompt as debug event
     sendMessage(ws, {
       id: msg.id,
@@ -492,6 +514,7 @@ const handlers: Record<string, MessageHandler> = {
 
     let rateLimitHits = 0;
     const MAX_RATE_LIMIT_HITS = 3;
+    let bufferedGeminiText = '';
 
     try {
       for await (const event of events) {
@@ -518,6 +541,7 @@ const handlers: Record<string, MessageHandler> = {
         }
 
         if (requestProvider === 'claude') {
+          bufferedGeminiText = flushTerminalText(requestProvider, prefixGreen, reset, bufferedGeminiText);
           for (const entry of formatClaudeTerminalEntries(event)) {
             if (entry.isError) {
               console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${entry.text}`);
@@ -526,9 +550,14 @@ const handlers: Record<string, MessageHandler> = {
             }
           }
         } else if (event.type === 'text' && event.content) {
-          console.log(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
+          bufferedGeminiText = appendTerminalChunk(bufferedGeminiText, event.content);
+        } else if (event.type === 'debug' && event.content) {
+          console.log(`${prefixGreen}[Skema ${requestProvider} debug]${reset} ${event.content}`);
         } else if (event.type === 'error' && event.content) {
+          bufferedGeminiText = flushTerminalText(requestProvider, prefixGreen, reset, bufferedGeminiText);
           console.error(`${prefixGreen}[Skema ${requestProvider}]${reset} ${event.content}`);
+        } else {
+          bufferedGeminiText = flushTerminalText(requestProvider, prefixGreen, reset, bufferedGeminiText);
         }
         sendMessage(ws, {
           id: msg.id,
@@ -538,6 +567,7 @@ const handlers: Record<string, MessageHandler> = {
         });
 
         if (event.type === 'done') {
+          bufferedGeminiText = flushTerminalText(requestProvider, prefixGreen, reset, bufferedGeminiText);
           sendMessage(ws, {
             id: msg.id,
             type: 'generate-complete',
