@@ -7,17 +7,19 @@ import type { DOMSelection } from '../../types';
 
 interface SelectionOverlayProps {
     selections: DOMSelection[];
+    scrollOffset?: { x: number; y: number; zoom: number };
 }
 
-export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections }) => {
-    // Track scroll position to trigger re-renders
+export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections, scrollOffset: externalOffset }) => {
+    // Track scroll position as fallback when no external offset provided
     const [scrollPos, setScrollPos] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
+        if (externalOffset) return;
+
         const handleScrollOrResize = () => {
             setScrollPos({ x: window.scrollX, y: window.scrollY });
         };
-        // Initial position
         handleScrollOrResize();
         window.addEventListener('scroll', handleScrollOrResize, { passive: true });
         window.addEventListener('resize', handleScrollOrResize);
@@ -25,15 +27,17 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections }
             window.removeEventListener('scroll', handleScrollOrResize);
             window.removeEventListener('resize', handleScrollOrResize);
         };
-    }, []);
+    }, [externalOffset]);
+
+    const zoom = externalOffset?.zoom ?? 1;
+    const offsetX = externalOffset?.x ?? scrollPos.x;
+    const offsetY = externalOffset?.y ?? scrollPos.y;
 
     return (
         <>
             {selections.map((selection) => {
-                // boundingBox is stored in document coordinates
-                // Convert to viewport coordinates by subtracting current scroll
-                const viewportX = selection.boundingBox.x - scrollPos.x;
-                const viewportY = selection.boundingBox.y - scrollPos.y;
+                const viewportX = selection.boundingBox.x * zoom - offsetX;
+                const viewportY = selection.boundingBox.y * zoom - offsetY;
 
                 return (
                     <div
@@ -43,8 +47,8 @@ export const SelectionOverlay: React.FC<SelectionOverlayProps> = ({ selections }
                             position: 'fixed',
                             left: viewportX,
                             top: viewportY,
-                            width: selection.boundingBox.width,
-                            height: selection.boundingBox.height,
+                            width: selection.boundingBox.width * zoom,
+                            height: selection.boundingBox.height * zoom,
                             border: '2px solid #10b981',
                             backgroundColor: 'rgba(16, 185, 129, 0.1)',
                             pointerEvents: 'none',

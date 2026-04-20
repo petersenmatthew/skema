@@ -5,6 +5,45 @@
 import type { BoundingBox, ViewportInfo } from '../types';
 
 /**
+ * Gets the current body CSS transform as translate + scale values.
+ * Used to undo the infinite canvas transform when capturing element positions.
+ */
+export function getBodyTransform(): { tx: number; ty: number; scale: number } {
+  const transform = document.body.style.transform;
+  if (!transform || transform === 'none') {
+    return { tx: 0, ty: 0, scale: 1 };
+  }
+  const matrix = new DOMMatrix(transform);
+  return { tx: matrix.e, ty: matrix.f, scale: matrix.a };
+}
+
+/**
+ * Converts a screen-space bounding rect (from getBoundingClientRect) to
+ * true document coordinates, undoing any CSS transform on the body.
+ */
+export function screenRectToDocBBox(rect: DOMRect): BoundingBox {
+  const { tx, ty, scale } = getBodyTransform();
+  return {
+    x: (rect.left - tx) / scale + window.scrollX,
+    y: (rect.top - ty) / scale + window.scrollY,
+    width: rect.width / scale,
+    height: rect.height / scale,
+  };
+}
+
+/**
+ * Converts screen coordinates to tldraw world coordinates (undoing body transform).
+ * Use for comparing screen-space element positions with tldraw brush/lasso bounds.
+ */
+export function screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
+  const { tx, ty, scale } = getBodyTransform();
+  return {
+    x: (screenX - tx) / scale,
+    y: (screenY - ty) / scale,
+  };
+}
+
+/**
  * Gets current viewport information
  */
 export function getViewportInfo(): ViewportInfo {

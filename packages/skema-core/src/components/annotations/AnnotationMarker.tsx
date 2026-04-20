@@ -12,7 +12,7 @@ import type { Annotation, DOMSelection } from '../../types';
 interface AnnotationMarkerProps {
     annotation: Annotation;
     index: number;
-    scrollOffset: { x: number; y: number };
+    scrollOffset: { x: number; y: number; zoom: number };
     onHover: (id: string | null) => void;
     onClick: (annotation: Annotation) => void;
     isHovered: boolean;
@@ -44,9 +44,10 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
         markerY = annotation.boundingBox.y;
     }
 
-    // Convert to viewport coordinates
-    const viewportX = markerX - scrollOffset.x;
-    const viewportY = markerY - scrollOffset.y - 12; // Position above the element
+    // Convert to viewport coordinates (apply zoom then offset)
+    const zoom = scrollOffset.zoom ?? 1;
+    const viewportX = markerX * zoom - scrollOffset.x;
+    const viewportY = markerY * zoom - scrollOffset.y - 12; // Position above the element
 
     const isDrawing = annotation.type === 'drawing';
     const markerColor = isDrawing ? '#8B5CF6' : accentColor; // Purple for drawings
@@ -154,7 +155,7 @@ const AnnotationMarker: React.FC<AnnotationMarkerProps> = ({
 
 interface AnnotationMarkersLayerProps {
     annotations: Annotation[];
-    scrollOffset: { x: number; y: number };
+    scrollOffset: { x: number; y: number; zoom: number };
     hoveredMarkerId: string | null;
     onHover: (id: string | null) => void;
     onDelete: (annotation: Annotation) => void;

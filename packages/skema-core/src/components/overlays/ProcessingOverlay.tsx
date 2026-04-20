@@ -160,13 +160,14 @@ export const ProcessingOverlayStyles = `
 
 interface ProcessingOverlayProps {
     boundingBox: BoundingBox;
-    scrollOffset: { x: number; y: number };
+    scrollOffset: { x: number; y: number; zoom: number };
 }
 
 export const ProcessingOverlay: React.FC<ProcessingOverlayProps> = ({ boundingBox, scrollOffset }) => {
-    // Convert to viewport coordinates
-    const viewportX = boundingBox.x - scrollOffset.x;
-    const viewportY = boundingBox.y - scrollOffset.y;
+    // Convert to viewport coordinates (apply zoom then offset)
+    const zoom = scrollOffset.zoom ?? 1;
+    const viewportX = boundingBox.x * zoom - scrollOffset.x;
+    const viewportY = boundingBox.y * zoom - scrollOffset.y;
 
     return (
         <>
@@ -177,8 +178,8 @@ export const ProcessingOverlay: React.FC<ProcessingOverlayProps> = ({ boundingBo
                     position: 'fixed',
                     left: viewportX,
                     top: viewportY,
-                    width: boundingBox.width,
-                    height: boundingBox.height,
+                    width: boundingBox.width * zoom,
+                    height: boundingBox.height * zoom,
                     border: '3px solid rgba(139, 92, 246, 0.95)',
                     borderRadius: 4,
                     pointerEvents: 'none',

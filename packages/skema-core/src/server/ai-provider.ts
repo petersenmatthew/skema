@@ -42,6 +42,7 @@ interface ProviderSpec {
   command: string;
   buildArgs: (prompt: string, options?: { model?: string; yolo?: boolean }) => string[];
   parseOutput: (line: string) => AIStreamEvent | null;
+  classifyStderr?: (line: string) => AIStreamEvent['type'];
 }
 
 const PROVIDERS: Record<AIProvider, ProviderSpec> = {
@@ -74,6 +75,19 @@ const PROVIDERS: Record<AIProvider, ProviderSpec> = {
         };
       }
     },
+    classifyStderr: (line) => {
+      const normalized = line.toLowerCase();
+      const isLikelyError =
+        normalized.includes('error') ||
+        normalized.includes('failed') ||
+        normalized.includes('exception') ||
+        normalized.includes('fatal') ||
+        normalized.includes('not found') ||
+        normalized.includes('permission denied') ||
+        normalized.includes('unknown option');
+
+      return isLikelyError ? 'error' : 'debug';
+    },
   },
 
   claude: {
@@ -103,6 +117,7 @@ const PROVIDERS: Record<AIProvider, ProviderSpec> = {
         };
       }
     },
+    classifyStderr: () => 'error',
   },
 };
 
@@ -161,8 +176,12 @@ export function spawnAICLI(
   const spec = PROVIDERS[config.provider];
   const args = spec.buildArgs(prompt, { model: config.model });
   const cwd = config.cwd || process.cwd();
+  const redactedArgs = args.map((arg, index) => {
+    if (index > 0 && args[index - 1] === '-p') return '[prompt omitted]';
+    return arg;
+  });
 
-  console.log(`[Skema] Spawning ${config.provider}: ${spec.command} ${args.join(' ')}`);
+  console.log(`[Skema] Spawning ${config.provider}: ${spec.command} ${redactedArgs.join(' ')}`);
 
   const child = spawn(spec.command, args, {
     cwd,
@@ -203,7 +222,7 @@ export function spawnAICLI(
         const content = data.toString().trim();
         if (content) {
           pushEvent({
-            type: 'error',
+            type: spec.classifyStderr?.(content) ?? 'error',
             content,
             timestamp: new Date().toISOString(),
             provider: config.provider,
