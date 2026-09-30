@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { Annotation } from '../types';
+import type { VisionProviderName } from '../lib/settingsStorage';
 
 // =============================================================================
 // Types
@@ -19,6 +20,17 @@ export interface AnnotationCounts {
   acknowledged: number;
   resolved: number;
   dismissed: number;
+}
+
+export interface VisionModelList {
+  models: { id: string; name: string }[];
+  keySource: 'settings' | 'env' | null;
+  error?: string;
+}
+
+export interface VisionModelsResult {
+  defaults: Record<VisionProviderName, string>;
+  providers: Record<VisionProviderName, VisionModelList>;
 }
 
 export interface DaemonState {
@@ -97,6 +109,7 @@ export interface UseDaemonReturn {
   writeFile: (path: string, content: string) => Promise<boolean>;
   /** Run a command */
   runCommand: (command: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  listVisionModels: (keys: Partial<Record<VisionProviderName, string>>) => Promise<VisionModelsResult | null>;
 }
 
 // =============================================================================
@@ -436,6 +449,15 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     };
   }, [sendRequest]);
 
+  // Live vision model lists for each provider with a key
+  const listVisionModels = useCallback(async (keys: Partial<Record<VisionProviderName, string>>): Promise<VisionModelsResult | null> => {
+    try {
+      return await sendRequest<VisionModelsResult>('list-vision-models', { keys });
+    } catch {
+      return null;
+    }
+  }, [sendRequest]);
+
   // Auto-connect on mount
   useEffect(() => {
     if (autoConnect) {
@@ -461,5 +483,6 @@ export function useDaemon(options: UseDaemonOptions = {}): UseDaemonReturn {
     readFile,
     writeFile,
     runCommand,
+    listVisionModels,
   };
 }

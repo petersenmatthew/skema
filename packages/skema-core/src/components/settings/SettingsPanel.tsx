@@ -2,8 +2,8 @@
 // Settings Panel Component
 // =============================================================================
 
-import React, { useState, useEffect } from 'react';
-import type { ExecutionMode, ProviderName, ProviderStatus, AnnotationCounts } from '../../hooks/useDaemon';
+import React, { useState, useEffect, useRef } from 'react';
+import type { ExecutionMode, ProviderName, ProviderStatus, AnnotationCounts, VisionModelsResult } from '../../hooks/useDaemon';
 import {
   getStoredVisionApiKey,
   setStoredVisionApiKey,
@@ -19,44 +19,25 @@ import logoLightUrl from '../../assets/logo-light';
 // Package version - imported at build time
 const SKEMA_VERSION = '0.2.0';
 
-// Vision provider/model configuration
-const VISION_PROVIDERS: { value: VisionProviderName; label: string }[] = [
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'openai', label: 'OpenAI' },
-];
+// Vision providers, keyed by how their API keys start
+const PROVIDER_ORDER: VisionProviderName[] = ['gemini', 'claude', 'openai'];
+const PROVIDER_LABELS: Record<VisionProviderName, string> = { gemini: 'Google', claude: 'Anthropic', openai: 'OpenAI' };
+const PROVIDER_ENV_VARS: Record<VisionProviderName, string> = { gemini: 'GEMINI_API_KEY', claude: 'ANTHROPIC_API_KEY', openai: 'OPENAI_API_KEY' };
 
-const VISION_PROVIDER_MODELS: Record<VisionProviderName, { value: string; label: string }[]> = {
-  gemini: [
-    { value: 'gemini-2.5-flash', label: '2.5 Flash' },
-    { value: 'gemini-2.5-pro', label: '2.5 Pro' },
-    { value: 'gemini-3-flash-preview', label: '3 Flash' },
-    { value: 'gemini-3-pro-preview', label: '3 Pro' },
-  ],
-  claude: [
-    { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-    { value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5' },
-    { value: 'claude-opus-4-6', label: 'Opus 4.6' },
-  ],
-  openai: [
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'gpt-4.1', label: 'GPT-4.1' },
-    { value: 'gpt-5.2', label: 'GPT-5.2' },
-  ],
-};
+function detectKeyProvider(key: string): VisionProviderName | null {
+  if (key.startsWith('sk-ant-')) return 'claude';
+  if (key.startsWith('AIza')) return 'gemini';
+  if (key.startsWith('sk-')) return 'openai';
+  return null;
+}
 
-const VISION_PROVIDER_DEFAULT_MODEL: Record<VisionProviderName, string> = {
-  gemini: 'gemini-2.5-flash',
-  claude: 'claude-haiku-4-5-20251001',
-  openai: 'gpt-4o-mini',
-};
+function maskKey(key: string): string {
+  return key.slice(0, key.startsWith('sk-ant-') ? 7 : 4) + '...' + key.slice(-4);
+}
 
-const VISION_PROVIDER_KEY_LINKS: Record<VisionProviderName, { label: string; url: string }> = {
-  gemini: { label: 'Google AI Studio', url: 'https://aistudio.google.com/apikey' },
-  claude: { label: 'Anthropic Console', url: 'https://console.anthropic.com/settings/keys' },
-  openai: { label: 'OpenAI Platform', url: 'https://platform.openai.com/api-keys' },
-};
+function loadStoredKeys(): Record<VisionProviderName, string | null> {
+  return { gemini: getStoredVisionApiKey('gemini'), claude: getStoredVisionApiKey('claude'), openai: getStoredVisionApiKey('openai') };
+}
 
 export interface SettingsPanelProps {
   isOpen: boolean;
@@ -75,6 +56,7 @@ export interface SettingsPanelProps {
   // Actions
   onModeChange: (mode: ExecutionMode) => Promise<boolean>;
   onProviderChange: (provider: ProviderName) => Promise<boolean>;
+  onListVisionModels: (keys: Partial<Record<VisionProviderName, string>>) => Promise<VisionModelsResult | null>;
   // Theme (controlled by parent)
   theme: 'light' | 'dark';
   onThemeChange: (theme: 'light' | 'dark') => void;
@@ -94,49 +76,60 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   annotationCounts,
   onModeChange,
   onProviderChange,
+  onListVisionModels,
   theme,
   onThemeChange,
 }) => {
   const [visionProvider, setVisionProvider] = useState<VisionProviderName>('gemini');
   const [visionModel, setVisionModel] = useState('');
-  const [visionApiKey, setVisionApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
+  const [apiKeys, setApiKeys] = useState<Record<VisionProviderName, string | null>>({ gemini: null, claude: null, openai: null });
+  const [keyDraft, setKeyDraft] = useState('');
+  const [visionModels, setVisionModels] = useState<VisionModelsResult | null>(null);
+  const keyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (isOpen) {
-      const storedProvider = getStoredVisionProvider();
-      setVisionProvider(storedProvider);
-      setVisionModel(getStoredVisionModel() || VISION_PROVIDER_DEFAULT_MODEL[storedProvider]);
-      const storedKey = getStoredVisionApiKey(storedProvider);
-      setVisionApiKey(storedKey ?? '');
+      setVisionProvider(getStoredVisionProvider());
+      setVisionModel(getStoredVisionModel() || '');
+      setApiKeys(loadStoredKeys());
     }
   }, [isOpen]);
 
-  const handleVisionProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newProvider = e.target.value as VisionProviderName;
-    setVisionProvider(newProvider);
-    setStoredVisionProvider(newProvider);
-    // Load per-provider API key
-    const storedKey = getStoredVisionApiKey(newProvider);
-    setVisionApiKey(storedKey ?? '');
-    setShowApiKey(false);
-    // Reset model to default for new provider
-    const defaultModel = VISION_PROVIDER_DEFAULT_MODEL[newProvider];
-    setVisionModel(defaultModel);
-    setStoredVisionModel(defaultModel);
+  // Refresh the live model lists whenever the keys change
+  useEffect(() => {
+    if (!isOpen || !connected) return;
+    let cancelled = false;
+    const keys = Object.fromEntries(Object.entries(apiKeys).filter(([, k]) => k)) as Partial<Record<VisionProviderName, string>>;
+    onListVisionModels(keys).then((result) => {
+      if (!cancelled && result) setVisionModels(result);
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, connected, apiKeys, onListVisionModels]);
+
+  const saveKey = (raw: string): boolean => {
+    const key = raw.trim();
+    const keyProvider = detectKeyProvider(key);
+    if (!keyProvider || key.length < 20) return false;
+    setStoredVisionApiKey(keyProvider, key);
+    setApiKeys((prev) => ({ ...prev, [keyProvider]: key }));
+    setKeyDraft('');
+    return true;
   };
 
-  const handleVisionModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newModel = e.target.value;
-    setVisionModel(newModel);
-    setStoredVisionModel(newModel);
+  const removeKey = (keyProvider: VisionProviderName) => {
+    setStoredVisionApiKey(keyProvider, '');
+    setApiKeys((prev) => ({ ...prev, [keyProvider]: null }));
   };
 
-  const handleVisionApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value;
-    setVisionApiKey(v);
-    setStoredVisionApiKey(visionProvider, v || '');
+  const selectModel = (modelProvider: VisionProviderName, model: string) => {
+    setVisionProvider(modelProvider);
+    setStoredVisionProvider(modelProvider);
+    setVisionModel(model);
+    setStoredVisionModel(model);
   };
+
+  const draftProvider = detectKeyProvider(keyDraft.trim());
+  const hasAnyKey = PROVIDER_ORDER.some((p) => apiKeys[p] || visionModels?.providers[p]?.keySource === 'env');
 
   if (!isOpen) return null;
 
@@ -158,7 +151,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
         boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
         zIndex: zIndex + 10,
         pointerEvents: 'auto',
-        overflow: 'hidden',
         border: `1px solid ${borderColor}`,
       }}
     >
@@ -196,127 +188,111 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <ThemeIconToggle isDark={isDark} onToggle={() => onThemeChange(isDark ? 'light' : 'dark')} />
         </SettingRow>
 
-        {/* Vision API key (for drawing analysis) */}
+        {/* API keys (for drawing analysis) */}
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 14, color: textColor, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-            Vision API key
+            API keys
             <InfoTooltip
-              text="Used to analyze your drawings and annotations"
+              text="Used to analyze your drawings. Paste a Google, Anthropic, or OpenAI key."
               isDark={isDark}
               mutedColor={mutedColor}
             />
           </div>
-          <div style={{ position: 'relative' }}>
+          {PROVIDER_ORDER.map((p) => {
+            const key = apiKeys[p];
+            if (!key && visionModels?.providers[p]?.keySource !== 'env') return null;
+            return (
+              <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                <ProviderBadge label={PROVIDER_LABELS[p]} isDark={isDark} />
+                <span style={{ flex: 1, color: mutedColor, fontFamily: 'monospace', fontSize: 11 }}>
+                  {key ? maskKey(key) : 'from ' + PROVIDER_ENV_VARS[p]}
+                </span>
+                {visionModels?.providers[p]?.error && (
+                  <span title={visionModels.providers[p].error} style={{ fontSize: 10.5, color: '#ef4444' }}>
+                    Rejected
+                  </span>
+                )}
+                {key && (
+                  <button
+                    type="button"
+                    onClick={() => removeKey(p)}
+                    title="Remove key"
+                    style={{ display: 'flex', padding: 3, border: 'none', borderRadius: 4, background: 'transparent', color: mutedColor, cursor: 'pointer' }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <div style={{ position: 'relative', marginTop: 6 }}>
             <input
-              type={showApiKey ? 'text' : 'password'}
-              placeholder=""
-              value={visionApiKey}
-              onChange={handleVisionApiKeyChange}
+              ref={keyInputRef}
+              type="password"
+              placeholder="Paste an API key"
+              value={keyDraft}
+              onChange={(e) => setKeyDraft(e.target.value)}
+              onPaste={(e) => {
+                if (saveKey(e.clipboardData.getData('text'))) e.preventDefault();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveKey(keyDraft);
+              }}
+              onBlur={() => saveKey(keyDraft)}
               autoComplete="off"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
-                padding: '8px 32px 8px 10px',
+                padding: '8px 90px 8px 10px',
                 fontSize: 12,
                 fontFamily: 'monospace',
-                border: `1px solid ${borderColor}`,
+                border: '1px solid ' + borderColor,
                 borderRadius: 8,
                 backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
                 color: textColor,
                 outline: 'none',
               }}
             />
-            {visionApiKey && (
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                title={showApiKey ? 'Hide API key' : 'Show API key'}
-                style={{
-                  position: 'absolute',
-                  right: 6,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 24,
-                  height: 24,
-                  border: 'none',
-                  borderRadius: 4,
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  padding: 0,
-                  color: mutedColor,
-                }}
-              >
-                {showApiKey ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                    <line x1="1" y1="1" x2="23" y2="23" />
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
-              </button>
+            {keyDraft.trim() && (
+              <span style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)' }}>
+                <ProviderBadge label={draftProvider ? PROVIDER_LABELS[draftProvider] : 'Unknown key'} isDark={isDark} warn={!draftProvider} />
+              </span>
             )}
           </div>
-          <div style={{ fontSize: 10, color: mutedColor, marginTop: 4, lineHeight: 1.3 }}>
-            Stored in this browser only. Get a key at{' '}
-            <a
-              href={VISION_PROVIDER_KEY_LINKS[visionProvider].url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: isDark ? '#93c5fd' : '#2563eb' }}
-            >
-              {VISION_PROVIDER_KEY_LINKS[visionProvider].label}
-            </a>
-          </div>
-          {/* Provider + Model selectors (compact one-line) */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <select
-              value={visionProvider}
-              onChange={handleVisionProviderChange}
-              style={{
-                flex: 1,
-                padding: '6px 8px',
-                fontSize: 12,
-                border: `1px solid ${borderColor}`,
-                borderRadius: 6,
-                backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
-                color: textColor,
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              {VISION_PROVIDERS.map(p => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-            </select>
-            <select
-              value={visionModel}
-              onChange={handleVisionModelChange}
-              style={{
-                flex: 1.5,
-                padding: '6px 8px',
-                fontSize: 11,
-                border: `1px solid ${borderColor}`,
-                borderRadius: 6,
-                backgroundColor: isDark ? '#2a2a2a' : '#f5f5f5',
-                color: textColor,
-                outline: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              {VISION_PROVIDER_MODELS[visionProvider].map(m => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
+          <div style={{ fontSize: 10, color: keyDraft.trim() && !draftProvider ? '#ef4444' : mutedColor, marginTop: 4, lineHeight: 1.3 }}>
+            {keyDraft.trim() && !draftProvider ? (
+              'Keys start with AIza (Google), sk-ant- (Anthropic), or sk- (OpenAI).'
+            ) : (
+              <>
+                Stored in this browser only.
+                {!hasAnyKey && (
+                  <>
+                    {' '}Get a free key at{' '}
+                    <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" style={{ color: isDark ? '#93c5fd' : '#2563eb' }}>
+                      Google AI Studio
+                    </a>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
+
+        {/* Vision model (menu opens upward because the panel sits at the bottom of the screen) */}
+        <SettingRow label="Vision model" isDark={isDark} textColor={textColor} mutedColor={mutedColor}>
+          <ModelMenu
+            visionModels={visionModels}
+            provider={visionProvider}
+            model={visionModel}
+            connected={connected}
+            onSelect={selectModel}
+            onAddKey={() => keyInputRef.current?.focus()}
+            isDark={isDark}
+          />
+        </SettingRow>
 
         {/* Disconnected Banner */}
         {!connected && (
@@ -414,8 +390,243 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
 // =============================================================================
 
 // =============================================================================
+// Provider Badge and Icon
+// =============================================================================
+
+const ProviderBadge: React.FC<{ label: string; isDark: boolean; warn?: boolean }> = ({ label, isDark, warn }) => (
+  <span
+    style={{
+      fontSize: 10.5,
+      padding: '2px 7px',
+      borderRadius: 5,
+      flexShrink: 0,
+      backgroundColor: warn ? '#ef444420' : isDark ? '#93c5fd1f' : '#2563eb14',
+      color: warn ? '#ef4444' : isDark ? '#93c5fd' : '#2563eb',
+    }}
+  >
+    {label}
+  </span>
+);
+
+const ProviderIcon: React.FC<{ provider: VisionProviderName }> = ({ provider }) => {
+  if (provider === 'gemini') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2c.6 5.3 4.7 9.4 10 10-5.3.6-9.4 4.7-10 10-.6-5.3-4.7-9.4-10-10 5.3-.6 9.4-4.7 10-10z" />
+      </svg>
+    );
+  }
+  if (provider === 'claude') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+};
+
+// =============================================================================
+// Model Menu
+// =============================================================================
+
+interface ModelMenuProps {
+  visionModels: VisionModelsResult | null;
+  provider: VisionProviderName;
+  model: string;
+  connected: boolean;
+  onSelect: (provider: VisionProviderName, model: string) => void;
+  onAddKey: () => void;
+  isDark: boolean;
+}
+
+const ModelMenu: React.FC<ModelMenuProps> = ({ visionModels, provider, model, connected, onSelect, onAddKey, isDark }) => {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [query, setQuery] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [open]);
+
+  const currentId = model || visionModels?.defaults[provider] || '';
+  const currentName = visionModels?.providers[provider]?.models.find((m) => m.id === currentId)?.name || currentId || 'Default';
+  const q = query.trim().toLowerCase();
+  const groups = PROVIDER_ORDER.map((p) => ({
+    provider: p,
+    models: (visionModels?.providers[p]?.models ?? []).filter((m) => !q || m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q)),
+  })).filter((g) => g.models.length > 0);
+
+  const close = () => {
+    setOpen(false);
+    setQuery('');
+  };
+  const choose = (p: VisionProviderName, id: string) => {
+    onSelect(p, id);
+    close();
+  };
+
+  const mutedColor = isDark ? '#8b8b8b' : '#777777';
+  const divider = <div style={{ height: 1, margin: '5px 6px', backgroundColor: isDark ? '#383838' : '#e5e5e5' }} />;
+  const emptyText = !connected ? 'Daemon not running' : visionModels ? 'Add an API key to see models' : 'Loading models...';
+
+  return (
+    <div ref={rootRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => (open ? close() : setOpen(true))}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 8px',
+          marginRight: -8,
+          border: 'none',
+          borderRadius: 999,
+          backgroundColor: open || hovered ? (isDark ? '#2a2a2a' : '#f0f0f0') : 'transparent',
+          color: isDark ? '#d0d0d0' : '#333333',
+          fontSize: 13,
+          cursor: 'pointer',
+        }}
+      >
+        <ProviderIcon provider={provider} />
+        <span style={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentName}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={mutedColor} strokeWidth="2.4">
+          <polyline points="18 15 12 9 6 15" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            right: -8,
+            bottom: 'calc(100% + 6px)',
+            width: 240,
+            padding: 6,
+            borderRadius: 14,
+            backgroundColor: isDark ? 'rgba(40,40,40,0.96)' : 'rgba(255,255,255,0.98)',
+            backdropFilter: 'blur(18px)',
+            border: '1px solid ' + (isDark ? '#3a3a3a' : '#e0e0e0'),
+            boxShadow: '0 18px 44px rgba(0,0,0,0.35)',
+            zIndex: 20,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px 6px' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={mutedColor} strokeWidth="2" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="7" />
+              <line x1="21" y1="21" x2="16.5" y2="16.5" />
+            </svg>
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') close();
+                if (e.key === 'Enter') {
+                  if (groups[0]) choose(groups[0].provider, groups[0].models[0].id);
+                  else if (q) choose(provider, query.trim());
+                }
+              }}
+              placeholder="Search models"
+              style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: isDark ? '#ececec' : '#1a1a1a', fontSize: 13 }}
+            />
+          </div>
+          <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+            {groups.map((g, gi) => (
+              <React.Fragment key={g.provider}>
+                {gi > 0 && divider}
+                {g.models.map((m) => (
+                  <MenuItem key={m.id} isDark={isDark} onClick={() => choose(g.provider, m.id)}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
+                    {g.provider === provider && m.id === currentId && (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" style={{ flexShrink: 0 }}>
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    )}
+                  </MenuItem>
+                ))}
+              </React.Fragment>
+            ))}
+            {groups.length === 0 && q && (
+              <MenuItem isDark={isDark} onClick={() => choose(provider, query.trim())}>
+                <span>Use "{query.trim()}"</span>
+              </MenuItem>
+            )}
+            {groups.length === 0 && !q && <div style={{ padding: '7px 8px', fontSize: 12, color: mutedColor }}>{emptyText}</div>}
+          </div>
+          {divider}
+          <MenuItem
+            isDark={isDark}
+            onClick={() => {
+              close();
+              onAddKey();
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Add API key
+            </span>
+          </MenuItem>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MenuItem: React.FC<{ isDark: boolean; onClick: () => void; children: React.ReactNode }> = ({ isDark, onClick, children }) => {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        width: '100%',
+        padding: '7px 8px',
+        border: 'none',
+        borderRadius: 8,
+        backgroundColor: hovered ? (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)') : 'transparent',
+        color: isDark ? '#ececec' : '#1a1a1a',
+        fontSize: 13,
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
+  );
+};
+
+// =============================================================================
 // Info Tooltip
 // =============================================================================
+
 
 interface InfoTooltipProps {
   text: string;
