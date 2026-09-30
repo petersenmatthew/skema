@@ -13,7 +13,7 @@ import {
   type ProviderStatus,
 } from './ai-provider';
 import { buildPromptFromAnnotation, type ProjectContext } from './gemini-cli';
-import { analyzeImage } from './vision';
+import { analyzeImage, listVisionModels, DEFAULT_VISION_MODELS, type VisionProvider } from './vision';
 import { type ProviderName, type ExecutionMode } from './providers';
 import type { Annotation } from '../types';
 import {
@@ -260,6 +260,19 @@ const handlers: Record<string, MessageHandler> = {
       id: msg.id,
       type: 'provider-statuses',
       providerStatus: statuses,
+    };
+  },
+
+  // Live vision model lists, using keys from the browser or env vars
+  'list-vision-models': async (msg) => {
+    const keys = (msg.keys ?? {}) as Partial<Record<VisionProvider, string>>;
+    const providers: VisionProvider[] = ['gemini', 'claude', 'openai'];
+    const lists = await Promise.all(providers.map((p) => listVisionModels(p, keys[p])));
+    return {
+      id: msg.id,
+      type: 'vision-models',
+      defaults: DEFAULT_VISION_MODELS,
+      providers: Object.fromEntries(providers.map((p, i) => [p, lists[i]])),
     };
   },
 

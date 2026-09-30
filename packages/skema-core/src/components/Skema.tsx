@@ -117,6 +117,7 @@ export const Skema: React.FC<SkemaProps> = ({
     revert,
     setMode,
     setProvider,
+    listVisionModels,
   } = useDaemon({
     url: daemonUrl || 'ws://localhost:9999',
     autoConnect: daemonUrl !== null,
@@ -1109,6 +1110,7 @@ export const Skema: React.FC<SkemaProps> = ({
         annotationCounts={daemonState.annotationCounts}
         onModeChange={setMode}
         onProviderChange={setProvider}
+        onListVisionModels={listVisionModels}
         theme={theme}
         onThemeChange={setTheme}
       />
